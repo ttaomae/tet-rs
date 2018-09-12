@@ -1,27 +1,27 @@
 use std::fmt;
 
 /// The playfield where blocks are placed.
-struct Playfield {
+pub struct Playfield {
     grid: [[Space; 10]; 40],
 }
 
 /// A space in the playfield.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Space {
+pub enum Space {
     Empty,
     Block,
 }
 
 impl Playfield {
     /// Creates a new empty playfield.
-    fn new() -> Playfield {
+    pub fn new() -> Playfield {
         Playfield {
             grid: [[Space::Empty; 10]; 40],
         }
     }
 
     /// Gets the space at the specified row and column.
-    fn get(&self, row: usize, col: usize) -> Space {
+    pub fn get(&self, row: usize, col: usize) -> Space {
         Playfield::check_index(row, col);
         self.grid[row - 1][col - 1]
     }
@@ -50,8 +50,8 @@ impl Playfield {
 }
 
 /// A shape consisting of four connected squares.
-#[derive(Debug, PartialEq, Eq)]
-enum Tetromino {
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum Tetromino {
     /// ```
     /// #
     /// #
@@ -94,8 +94,8 @@ enum Tetromino {
 }
 
 /// The rotation state of a tetromino.
-#[derive(Debug, PartialEq, Eq)]
-enum Rotation {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Rotation {
     /// The default rotation when a piece is spawned.
     Spawn,
     /// 90 degree clockwise rotation from spawn rotation.
@@ -126,24 +126,33 @@ impl Rotation {
     }
 }
 
-struct Piece {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Piece {
     shape: Tetromino,
     rotation: Rotation,
 }
 
 impl Piece {
-    fn new(shape: Tetromino) -> Piece {
+    pub fn new(shape: Tetromino) -> Piece {
         Piece {
             shape: shape,
             rotation: Rotation::Spawn,
         }
     }
 
-    fn rotate_cw(&mut self) {
+    pub fn get_shape(&self) -> &Tetromino {
+        &self.shape
+    }
+
+    pub fn get_rotation(&self) -> &Rotation {
+        &self.rotation
+    }
+
+    pub fn rotate_cw(&mut self) {
         self.rotation = self.rotation.cw();
     }
 
-    fn rotate_ccw(&mut self) {
+    pub fn rotate_ccw(&mut self) {
         self.rotation = self.rotation.ccw();
     }
 }
@@ -173,6 +182,7 @@ impl fmt::Debug for Playfield {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_playfield_new() {
         let playfield = Playfield::new();
@@ -254,8 +264,8 @@ mod tests {
     }
 
     fn assert_piece_new(piece: Piece, expected_shape: Tetromino) {
-        assert_eq!(piece.shape, expected_shape);
-        assert_eq!(piece.rotation, Rotation::Spawn);
+        assert_eq!(piece.get_shape(), &expected_shape);
+        assert_eq!(piece.get_rotation(), &Rotation::Spawn);
     }
 
     #[test]
@@ -270,15 +280,15 @@ mod tests {
     }
 
     fn assert_piece_rotate_cw(piece: &mut Piece) {
-        assert_eq!(piece.rotation, Rotation::Spawn);
+        assert_eq!(piece.get_rotation(), &Rotation::Spawn);
         piece.rotate_cw();
-        assert_eq!(piece.rotation, Rotation::Clockwise);
+        assert_eq!(piece.get_rotation(), &Rotation::Clockwise);
         piece.rotate_cw();
-        assert_eq!(piece.rotation, Rotation::OneEighty);
+        assert_eq!(piece.get_rotation(), &Rotation::OneEighty);
         piece.rotate_cw();
-        assert_eq!(piece.rotation, Rotation::CounterClockwise);
+        assert_eq!(piece.get_rotation(), &Rotation::CounterClockwise);
         piece.rotate_cw();
-        assert_eq!(piece.rotation, Rotation::Spawn);
+        assert_eq!(piece.get_rotation(), &Rotation::Spawn);
     }
 
     #[test]
@@ -293,14 +303,14 @@ mod tests {
     }
 
     fn assert_piece_rotate_ccw(piece: &mut Piece) {
-        assert_eq!(piece.rotation, Rotation::Spawn);
+        assert_eq!(piece.get_rotation(), &Rotation::Spawn);
         piece.rotate_ccw();
-        assert_eq!(piece.rotation, Rotation::CounterClockwise);
+        assert_eq!(piece.get_rotation(), &Rotation::CounterClockwise);
         piece.rotate_ccw();
-        assert_eq!(piece.rotation, Rotation::OneEighty);
+        assert_eq!(piece.get_rotation(), &Rotation::OneEighty);
         piece.rotate_ccw();
-        assert_eq!(piece.rotation, Rotation::Clockwise);
+        assert_eq!(piece.get_rotation(), &Rotation::Clockwise);
         piece.rotate_ccw();
-        assert_eq!(piece.rotation, Rotation::Spawn);
+        assert_eq!(piece.get_rotation(), &Rotation::Spawn);
     }
 }

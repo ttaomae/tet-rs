@@ -3,3 +3,6 @@ edition = '2018'
 name = "tet-rs"
 version = "0.1.0"
 authors = ["Todd Taomae <ttaomae@gmail.com>"]
+
+[dependencies]
+rand = "0.5"

@@ -15,8 +15,8 @@ struct Engine {
 #[derive(Debug, PartialEq, Eq)]
 struct CurrentPiece {
     piece: Piece,
-    row: usize,
-    col: usize,
+    row: u8,
+    col: u8,
 }
 
 impl CurrentPiece {
@@ -139,8 +139,8 @@ mod tests {
         let engine = Engine::new();
 
         // Playfield should start empty.
-        for row in 1..=40 {
-            for col in 1..=10 {
+        for row in 1..=Playfield::TOTAL_HEIGHT {
+            for col in 1..=Playfield::WIDTH {
                 assert_eq!(engine.playfield.get(row, col), Space::Empty);
             }
         }
@@ -166,8 +166,8 @@ mod tests {
     fn assert_current_piece_new(
         piece: CurrentPiece,
         expected_shape: Tetromino,
-        expected_row: usize,
-        expected_col: usize,
+        expected_row: u8,
+        expected_col: u8,
     ) {
         assert_eq!(piece.piece.get_rotation(), &Rotation::Spawn);
         assert_eq!(piece.piece.get_shape(), &expected_shape);
@@ -257,7 +257,7 @@ mod tests {
 
         // New pieces should spawn back at the top.
         engine.next_piece();
-        assert!(engine.current_piece.row > 20);
+        assert!(engine.current_piece.row > Playfield::VISIBLE_HEIGHT);
     }
 
     #[test]

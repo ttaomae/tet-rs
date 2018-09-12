@@ -13,37 +13,41 @@ pub enum Space {
 }
 
 impl Playfield {
+    pub const WIDTH: u8 = 10;
+    pub const VISIBLE_HEIGHT: u8 = 20;
+    pub const TOTAL_HEIGHT: u8 = 40;
+
     /// Creates a new empty playfield.
     pub fn new() -> Playfield {
         Playfield {
-            grid: [[Space::Empty; 10]; 40],
+            grid: [[Space::Empty; Playfield::WIDTH as usize]; Playfield::TOTAL_HEIGHT as usize],
         }
     }
 
     /// Gets the space at the specified row and column.
-    pub fn get(&self, row: usize, col: usize) -> Space {
+    pub fn get(&self, row: u8, col: u8) -> Space {
         Playfield::check_index(row, col);
-        self.grid[row - 1][col - 1]
+        self.grid[row as usize - 1][col as usize - 1]
     }
 
     // Sets the space at the specified row and column to a block.
-    fn set(&mut self, row: usize, col: usize) {
+    fn set(&mut self, row: u8, col: u8) {
         Playfield::check_index(row, col);
-        self.grid[row - 1][col - 1] = Space::Block;
+        self.grid[row as usize - 1][col as usize - 1] = Space::Block;
     }
 
     // Clears the space at the specified row and column.
-    fn clear(&mut self, row: usize, col: usize) {
+    fn clear(&mut self, row: u8, col: u8) {
         Playfield::check_index(row, col);
-        self.grid[row - 1][col - 1] = Space::Empty
+        self.grid[row as usize - 1][col as usize - 1] = Space::Empty
     }
 
     /// Panics if row or column are out of bounds.
-    fn check_index(row: usize, col: usize) {
-        if row < 1 || row > 40 {
+    fn check_index(row: u8, col: u8) {
+        if row < 1 || row > Playfield::TOTAL_HEIGHT {
             panic!("row must be be between 1 and 40.");
         }
-        if col < 1 || col > 10 {
+        if col < 1 || col > Playfield::WIDTH {
             panic!("col mus tbe between 1 and 10.");
         }
     }
@@ -169,7 +173,7 @@ impl fmt::Debug for Space {
 impl fmt::Debug for Playfield {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // only display first 20 rows
-        for row in (0..20).rev() {
+        for row in (0..Playfield::VISIBLE_HEIGHT as usize).rev() {
             for col in &self.grid[row] {
                 write!(f, "{:?}", col)?
             }
@@ -186,8 +190,8 @@ mod tests {
     #[test]
     fn test_playfield_new() {
         let playfield = Playfield::new();
-        for row in 1..=40 {
-            for col in 1..=10 {
+        for row in 1..=Playfield::TOTAL_HEIGHT {
+            for col in 1..=Playfield::WIDTH {
                 assert_eq!(playfield.get(row, col), Space::Empty);
             }
         }
@@ -204,7 +208,7 @@ mod tests {
     #[should_panic]
     fn test_playfield_get_row_greater() {
         let playfield = Playfield::new();
-        playfield.get(41, 1);
+        playfield.get(Playfield::TOTAL_HEIGHT + 1, 1);
     }
 
     #[test]
@@ -218,7 +222,7 @@ mod tests {
     #[should_panic]
     fn test_playfield_get_col_greater() {
         let playfield = Playfield::new();
-        playfield.get(1, 11);
+        playfield.get(1, Playfield::WIDTH + 1);
     }
 
     #[test]

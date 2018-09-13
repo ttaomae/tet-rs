@@ -6,7 +6,7 @@ pub struct Playfield {
 }
 
 /// A space in the playfield.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Space {
     Empty,
     Block,
@@ -136,6 +136,29 @@ pub struct Piece {
     rotation: Rotation,
 }
 
+/// Create a [[Space; 4]; 4] representing the bounding box of a tetromino.
+/// Use - to represent empty spaces and # to represent blocks.
+macro_rules! bounding_box {
+    ($a:tt $b:tt $c:tt $d:tt
+     $e:tt $f:tt $g:tt $h:tt
+     $i:tt $j:tt $k:tt $l:tt
+     $m:tt $n:tt $o:tt $p:tt) => {
+        [
+            [space!($a), space!($b), space!($c), space!($d)],
+            [space!($e), space!($f), space!($g), space!($h)],
+            [space!($i), space!($j), space!($k), space!($l)],
+            [space!($m), space!($n), space!($o), space!($p)],
+        ]
+    };
+}
+
+/// Converts - to Space::Empty and # to Space::Block.
+#[rustfmt::skip]
+macro_rules! space {
+    (-) => { Space::Empty };
+    (#) => { Space::Block };
+}
+
 impl Piece {
     pub fn new(shape: Tetromino) -> Piece {
         Piece {
@@ -158,6 +181,236 @@ impl Piece {
 
     pub fn rotate_ccw(&mut self) {
         self.rotation = self.rotation.ccw();
+    }
+
+    pub fn get_bounding_box(&self) -> [[Space; 4]; 4] {
+        match self {
+            Piece {
+                shape: Tetromino::I,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                - - - -
+                # # # #
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::I,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - - # -
+                - - # -
+                - - # -
+                - - # -
+            ),
+            Piece {
+                shape: Tetromino::I,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                - - - -
+                # # # #
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::I,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                - # - -
+                - # - -
+                - # - -
+                - # - -
+            ),
+            Piece {
+                shape: Tetromino::O,
+                rotation: _,
+            } => bounding_box!(
+                - # # -
+                - # # -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::T,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                - # - -
+                # # # -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::T,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - # - -
+                - # # -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::T,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                # # # -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::T,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                - # - -
+                # # - -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::S,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                - # # -
+                # # - -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::S,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - # - -
+                - # # -
+                - - # -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::S,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                - # # -
+                # # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::S,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                # - - -
+                # # - -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::Z,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                # # - -
+                - # # -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::Z,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - - # -
+                - # # -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::Z,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                # # - -
+                - # # -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::Z,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                - # - -
+                # # - -
+                # - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::J,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                # - - -
+                # # # -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::J,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - # # -
+                - # - -
+                - # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::J,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                # # # -
+                - - # -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::J,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                - # - -
+                - # - -
+                # # - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::L,
+                rotation: Rotation::Spawn,
+            } => bounding_box!(
+                - - # -
+                # # # -
+                - - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::L,
+                rotation: Rotation::Clockwise,
+            } => bounding_box!(
+                - # - -
+                - # - -
+                - # # -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::L,
+                rotation: Rotation::OneEighty,
+            } => bounding_box!(
+                - - - -
+                # # # -
+                # - - -
+                - - - -
+            ),
+            Piece {
+                shape: Tetromino::L,
+                rotation: Rotation::CounterClockwise,
+            } => bounding_box!(
+                # # - -
+                - # - -
+                - # - -
+                - - - -
+            ),
+        }
     }
 }
 
@@ -186,6 +439,7 @@ impl fmt::Debug for Playfield {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_playfield_new() {
@@ -316,5 +570,55 @@ mod tests {
         assert_eq!(piece.get_rotation(), &Rotation::Clockwise);
         piece.rotate_ccw();
         assert_eq!(piece.get_rotation(), &Rotation::Spawn);
+    }
+
+    #[test]
+    fn test_piece_get_bounding_box() {
+        // For each shape, verify that each rotation has four blocks. Then verify that, except for
+        // O, each shape has four unique rotations.
+
+        let i_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::I));
+        assert_eq!(i_bbs.len(), 4);
+
+        let o_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::O));
+        assert_eq!(o_bbs.len(), 1);
+
+        let t_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::T));
+        assert_eq!(t_bbs.len(), 4);
+
+        let s_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::S));
+        assert_eq!(s_bbs.len(), 4);
+
+        let z_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::Z));
+        assert_eq!(z_bbs.len(), 4);
+
+        let j_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::J));
+        assert_eq!(j_bbs.len(), 4);
+
+        let l_bbs = assert_piece_bounding_box(&mut Piece::new(Tetromino::L));
+        assert_eq!(l_bbs.len(), 4);
+    }
+
+    fn assert_piece_bounding_box(piece: &mut Piece) -> HashSet<[[Space; 4]; 4]> {
+        let mut bounding_boxes = HashSet::new();
+        // Test all 4 rotations
+        for _ in 0..4 {
+            let mut blocks = 0;
+            let bounding_box = piece.get_bounding_box();
+            bounding_boxes.insert(bounding_box);
+            for row in bounding_box.iter() {
+                for col in row {
+                    if col == &Space::Block {
+                        blocks += 1;
+                    }
+                }
+            }
+
+            assert_eq!(blocks, 4);
+
+            piece.rotate_cw();
+        }
+
+        bounding_boxes
     }
 }

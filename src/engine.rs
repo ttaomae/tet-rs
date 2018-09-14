@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::fmt;
 
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
-use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
+use super::core::{Piece, Playfield, Space, Tetromino};
 
 /// The main game engine.
 struct Engine {
@@ -15,23 +15,18 @@ struct Engine {
 #[derive(Debug, PartialEq, Eq)]
 struct CurrentPiece {
     piece: Piece,
-    row: u8,
-    col: u8,
+    // Position of lower-left corner of bounding box.
+    row: i8,
+    col: i8,
 }
 
 impl CurrentPiece {
     /// Creates a new piece in spawn position.
     fn new(shape: Tetromino) -> CurrentPiece {
-        let (row, col) = match shape {
-            Tetromino::I => (21, 4),
-            Tetromino::O => (22, 5),
-            _ => (22, 4),
-        };
-
         CurrentPiece {
             piece: Piece::new(shape),
-            row: row,
-            col: col,
+            row: 20,
+            col: 4,
         }
     }
 
@@ -63,17 +58,37 @@ impl Engine {
         self.current_piece = CurrentPiece::new(rand::random::<Tetromino>());
     }
 
+    /// Returns whether or not there is a collision between the current piece and the playfield.
+    fn has_collision(&self) -> bool {
+        let bounding_box = self.current_piece.piece.get_bounding_box();
+        // Iterate through spaces of bounding box.
+        for row_offset in 0..4usize {
+            for col_offset in 0..4usize {
+                // Calculate position of space in playfield.
+                let row = self.current_piece.row + row_offset as i8;
+                let col = self.current_piece.col + col_offset as i8;
+                // Collisions can only occur on blocks.
+                if bounding_box[row_offset][col_offset] == Space::Block
+                    // Collision occurs if block is outside playfield.
+                    && ((row < 1 || col < 1 || col > Playfield::WIDTH as i8)
+                    // Or if block is inside playfield ...
+                    || (row  >= 1 && col >= 1
+                        // ... and there is already a block in that position.
+                        && self.playfield.get(row as u8, col as u8) == Space::Block))
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Drops the current piece by one row if it does not result in a collision.
     fn drop(&mut self) {
         self.current_piece.row -= 1;
         if self.has_collision() {
             self.current_piece.row += 1;
         }
-    }
-
-    /// Returns whether or not there is a collision between the current piece and the playfield.
-    fn has_collision(&self) -> bool {
-        false
     }
 
     /* * * * * * * * * *
@@ -130,9 +145,31 @@ impl Distribution<Tetromino> for Standard {
     }
 }
 
+impl fmt::Debug for Engine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut playfield = self.playfield.clone();
+
+        let bounding_box = self.current_piece.piece.get_bounding_box();
+        for row_offset in 0..4usize {
+            for col_offset in 0..4usize {
+                // Calculate position of space in playfield.
+                let row = self.current_piece.row + row_offset as i8;
+                let col = self.current_piece.col + col_offset as i8;
+                if bounding_box[row_offset][col_offset] == Space::Block {
+                    playfield.set(row as u8, col as u8);
+                }
+            }
+        }
+
+        write!(f, "{:?}", playfield)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_engine_new() {
@@ -151,28 +188,20 @@ mod tests {
 
     #[test]
     fn test_current_piece_new() {
-        // I is 4 spaces wide; starts cenetered, one row above visible field.
-        assert_current_piece_new(CurrentPiece::new(Tetromino::I), Tetromino::I, 21, 4);
-        // O is 2 spaces wide; starts centered, two columns above visible field.
-        assert_current_piece_new(CurrentPiece::new(Tetromino::O), Tetromino::O, 22, 5);
-        // Others are 3 spaces wide; start left of center, two columns above visible filed.
-        assert_current_piece_new(CurrentPiece::new(Tetromino::T), Tetromino::T, 22, 4);
-        assert_current_piece_new(CurrentPiece::new(Tetromino::S), Tetromino::S, 22, 4);
-        assert_current_piece_new(CurrentPiece::new(Tetromino::Z), Tetromino::Z, 22, 4);
-        assert_current_piece_new(CurrentPiece::new(Tetromino::J), Tetromino::J, 22, 4);
-        assert_current_piece_new(CurrentPiece::new(Tetromino::L), Tetromino::L, 22, 4);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::I), Tetromino::I);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::O), Tetromino::O);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::T), Tetromino::T);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::S), Tetromino::S);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::Z), Tetromino::Z);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::J), Tetromino::J);
+        assert_current_piece_new(CurrentPiece::new(Tetromino::L), Tetromino::L);
     }
 
-    fn assert_current_piece_new(
-        piece: CurrentPiece,
-        expected_shape: Tetromino,
-        expected_row: u8,
-        expected_col: u8,
-    ) {
+    fn assert_current_piece_new(piece: CurrentPiece, expected_shape: Tetromino) {
         assert_eq!(piece.piece.get_rotation(), &Rotation::Spawn);
         assert_eq!(piece.piece.get_shape(), &expected_shape);
-        assert_eq!(piece.row, expected_row);
-        assert_eq!(piece.col, expected_col);
+        assert_eq!(piece.row, 20);
+        assert_eq!(piece.col, 4);
     }
 
     #[test]
@@ -195,7 +224,68 @@ mod tests {
     }
 
     #[test]
-    fn test_engine_rotate() {
+    fn test_engine_has_collision() {
+        let mut engine = Engine::new();
+        assert!(!engine.has_collision());
+
+        // The spawn location should always overlap with this space.
+        engine.playfield.set(22, 5);
+        assert!(engine.has_collision());
+    }
+
+    #[test]
+    fn test_engine_drop() {
+        let mut engine = Engine::new();
+        let start_row = engine.current_piece.row;
+
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 1);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 2);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 3);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 4);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 5);
+    }
+
+    #[test]
+    fn test_engine_drop_collision() {
+        let mut engine = Engine::new();
+        let start_row = engine.current_piece.row;
+
+        // Bottom of tetromino should start on row 22, so we should be able to drop 21 rows.
+        for drop in 1..=21 {
+            engine.drop();
+            assert_eq!(engine.current_piece.row, start_row - drop);
+        }
+
+        // The tetromino should be at the bottom of the playfield
+        // so dropping again should have no effect.
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 21);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 21);
+
+        // Add an obstacle, then test that piece cannot drop past it.
+        engine.next_piece();
+        engine.playfield.set(15, 5);
+
+        // We should be able to drop 6 rows before hitting the obstacle.
+        for drop in 1..=6 {
+            engine.drop();
+            assert_eq!(engine.current_piece.row, start_row - drop);
+        }
+        // Futher attempts to drop will fail since would collide witht he obstacle.
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 6);
+        engine.drop();
+        assert_eq!(engine.current_piece.row, start_row - 6);
+    }
+
+    #[test]
+    fn test_engine_rotate_piece() {
         let mut engine = Engine::new();
 
         // Rotate clockwise.
@@ -240,30 +330,34 @@ mod tests {
     }
 
     #[test]
-    fn test_engine_drop() {
+    fn test_engine_rotate_piece_collision() {
         let mut engine = Engine::new();
-        let start_row = engine.current_piece.row;
 
-        engine.drop();
-        assert_eq!(engine.current_piece.row, start_row - 1);
-        engine.drop();
-        assert_eq!(engine.current_piece.row, start_row - 2);
-        engine.drop();
-        assert_eq!(engine.current_piece.row, start_row - 3);
-        engine.drop();
-        assert_eq!(engine.current_piece.row, start_row - 4);
-        engine.drop();
-        assert_eq!(engine.current_piece.row, start_row - 5);
+        // Create obstacle directly below spawn location.
+        engine.playfield.set(21, 4);
+        engine.playfield.set(21, 5);
+        engine.playfield.set(21, 6);
+        engine.playfield.set(21, 7);
 
-        // New pieces should spawn back at the top.
-        engine.next_piece();
-        assert!(engine.current_piece.row > Playfield::VISIBLE_HEIGHT);
+        // O piece will not collide, so get a new piece
+        while engine.current_piece.piece.get_shape() == &Tetromino::O {
+            engine.next_piece();
+        }
+
+        // attempt rotate
+        engine.rotate_piece_cw();
+        assert_eq!(engine.current_piece.piece.get_rotation(), &Rotation::Spawn);
+
+        engine.rotate_piece_ccw();
+        assert_eq!(engine.current_piece.piece.get_rotation(), &Rotation::Spawn);
+        // assert rotation == spawn
     }
 
     #[test]
     fn test_engine_move_piece() {
         let mut engine = Engine::new();
 
+        // Test move left.
         let start_col = engine.current_piece.col;
         engine.move_piece_left();
         assert_eq!(engine.current_piece.col, start_col - 1);
@@ -271,9 +365,8 @@ mod tests {
         assert_eq!(engine.current_piece.col, start_col - 2);
         engine.move_piece_left();
         assert_eq!(engine.current_piece.col, start_col - 3);
-        engine.move_piece_right();
-        assert_eq!(engine.current_piece.col, start_col - 2);
 
+        // Spawn a new piece then test move right.
         let start_col = engine.current_piece.col;
         engine.move_piece_right();
         assert_eq!(engine.current_piece.col, start_col + 1);
@@ -281,7 +374,32 @@ mod tests {
         assert_eq!(engine.current_piece.col, start_col + 2);
         engine.move_piece_right();
         assert_eq!(engine.current_piece.col, start_col + 3);
+    }
+
+    #[test]
+    fn test_engine_move_piece_collision() {
+        let mut engine = Engine::new();
+
+        // Spawn new piece then move to far left.
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_left();
+        }
+        // Moving further left should have no effect.
+        let far_left_col = engine.current_piece.col;
         engine.move_piece_left();
-        assert_eq!(engine.current_piece.col, start_col + 2);
+        assert_eq!(engine.current_piece.col, far_left_col);
+        engine.move_piece_left();
+        assert_eq!(engine.current_piece.col, far_left_col);
+
+        // Spawn new piece then do same as above, but move right.
+        engine.next_piece();
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_right();
+        }
+        let far_right_col = engine.current_piece.col;
+        engine.move_piece_right();
+        assert_eq!(engine.current_piece.col, far_right_col);
+        engine.move_piece_right();
+        assert_eq!(engine.current_piece.col, far_right_col);
     }
 }

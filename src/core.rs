@@ -1,6 +1,7 @@
 use std::fmt;
 
 /// The playfield where blocks are placed.
+#[derive(Clone, Copy)]
 pub struct Playfield {
     grid: [[Space; 10]; 40],
 }
@@ -31,7 +32,7 @@ impl Playfield {
     }
 
     // Sets the space at the specified row and column to a block.
-    fn set(&mut self, row: u8, col: u8) {
+    pub fn set(&mut self, row: u8, col: u8) {
         Playfield::check_index(row, col);
         self.grid[row as usize - 1][col as usize - 1] = Space::Block;
     }
@@ -143,11 +144,13 @@ macro_rules! bounding_box {
      $e:tt $f:tt $g:tt $h:tt
      $i:tt $j:tt $k:tt $l:tt
      $m:tt $n:tt $o:tt $p:tt) => {
+        // Reverse order of rows so that index matches order or playfield.
+        // (i.e. index 0 is the bottom row)
         [
-            [space!($a), space!($b), space!($c), space!($d)],
-            [space!($e), space!($f), space!($g), space!($h)],
-            [space!($i), space!($j), space!($k), space!($l)],
             [space!($m), space!($n), space!($o), space!($p)],
+            [space!($i), space!($j), space!($k), space!($l)],
+            [space!($e), space!($f), space!($g), space!($h)],
+            [space!($a), space!($b), space!($c), space!($d)],
         ]
     };
 }

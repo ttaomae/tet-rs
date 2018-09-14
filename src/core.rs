@@ -112,7 +112,7 @@ pub enum Rotation {
 }
 
 impl Rotation {
-    fn cw(&self) -> Rotation {
+    fn cw(self) -> Rotation {
         match self {
             Rotation::Spawn => Rotation::Clockwise,
             Rotation::Clockwise => Rotation::OneEighty,
@@ -121,7 +121,7 @@ impl Rotation {
         }
     }
 
-    fn ccw(&self) -> Rotation {
+    fn ccw(self) -> Rotation {
         match self {
             Rotation::Spawn => Rotation::CounterClockwise,
             Rotation::Clockwise => Rotation::Spawn,
@@ -165,7 +165,7 @@ macro_rules! space {
 impl Piece {
     pub fn new(shape: Tetromino) -> Piece {
         Piece {
-            shape: shape,
+            shape,
             rotation: Rotation::Spawn,
         }
     }
@@ -186,7 +186,7 @@ impl Piece {
         self.rotation = self.rotation.ccw();
     }
 
-    pub fn get_bounding_box(&self) -> [[Space; 4]; 4] {
+    pub fn get_bounding_box(self) -> [[Space; 4]; 4] {
         match self {
             Piece {
                 shape: Tetromino::I,
@@ -226,7 +226,7 @@ impl Piece {
             ),
             Piece {
                 shape: Tetromino::O,
-                rotation: _,
+                ..
             } => bounding_box!(
                 - # # -
                 - # # -
@@ -433,7 +433,7 @@ impl fmt::Debug for Playfield {
             for col in &self.grid[row] {
                 write!(f, "{:?}", col)?
             }
-            write!(f, "\n")?
+            writeln!(f)?
         }
         write!(f, "")
     }

@@ -62,13 +62,14 @@ impl Engine {
     fn has_collision(&self) -> bool {
         let bounding_box = self.current_piece.piece.get_bounding_box();
         // Iterate through spaces of bounding box.
-        for row_offset in 0..4usize {
-            for col_offset in 0..4usize {
+        for (row_offset, bb_row) in bounding_box.iter().enumerate() {
+            for (col_offset, bb_space) in bb_row.iter().enumerate() {
                 // Calculate position of space in playfield.
                 let row = self.current_piece.row + row_offset as i8;
                 let col = self.current_piece.col + col_offset as i8;
+
                 // Collisions can only occur on blocks.
-                if bounding_box[row_offset][col_offset] == Space::Block
+                if bb_space == &Space::Block
                     // Collision occurs if block is outside playfield.
                     && ((row < 1 || col < 1 || col > Playfield::WIDTH as i8)
                     // Or if block is inside playfield ...
@@ -147,15 +148,15 @@ impl Distribution<Tetromino> for Standard {
 
 impl fmt::Debug for Engine {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut playfield = self.playfield.clone();
+        let mut playfield = self.playfield;
 
         let bounding_box = self.current_piece.piece.get_bounding_box();
-        for row_offset in 0..4usize {
-            for col_offset in 0..4usize {
+        for (row_offset, bb_row) in bounding_box.iter().enumerate() {
+            for (col_offset, bb_space) in bb_row.iter().enumerate() {
                 // Calculate position of space in playfield.
                 let row = self.current_piece.row + row_offset as i8;
                 let col = self.current_piece.col + col_offset as i8;
-                if bounding_box[row_offset][col_offset] == Space::Block {
+                if bb_space == &Space::Block {
                     playfield.set(row as u8, col as u8);
                 }
             }

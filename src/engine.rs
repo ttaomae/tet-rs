@@ -92,6 +92,64 @@ impl Engine {
         }
     }
 
+    /// Locks the current piece into it's current location.
+    fn lock(&mut self) {
+        let bounding_box = self.current_piece.piece.get_bounding_box();
+        // Iterate through spaces of bounding box.
+        for (row_offset, bb_row) in bounding_box.iter().enumerate() {
+            for (col_offset, bb_space) in bb_row.iter().enumerate() {
+                // Collisions can only occur on blocks.
+                if bb_space == &Space::Block {
+                    // Calculate position of space in playfield.
+                    let row = self.current_piece.row as u8 + row_offset as u8;
+                    let col = self.current_piece.col as u8 + col_offset as u8;
+                    self.playfield.set(row as u8, col as u8);
+                }
+            }
+        }
+    }
+
+    /// Clears any rows that are full and drops blocks down.
+    fn clear_rows(&mut self) {
+        // Construct a list of all row that will NOT be cleared.
+        let mut non_full_rows = Vec::with_capacity(Playfield::TOTAL_HEIGHT as usize);
+        for row in 1..=Playfield::TOTAL_HEIGHT {
+            for col in 1..=Playfield::WIDTH {
+                // Any row that has a space will not be cleared.
+                if self.playfield.get(row, col) == Space::Empty {
+                    non_full_rows.push(row);
+                    break;
+                }
+            }
+        }
+
+        // Don't do anything if no rows are full
+        if non_full_rows.len() == Playfield::TOTAL_HEIGHT as usize {
+            return;
+        }
+
+        // Copy non-full rows to next available row. Since full rows are not in the list, this has
+        // the effect of overwriting the full rows.
+        let mut current_row = 1;
+        for row in non_full_rows {
+            // Copy non-full row to current row.
+            for col in 1..=Playfield::WIDTH {
+                match self.playfield.get(row, col) {
+                    Space::Empty => self.playfield.clear(current_row, col),
+                    Space::Block => self.playfield.set(current_row, col),
+                };
+            }
+            current_row += 1;
+        }
+
+        // Clear remaining rows.
+        for row in current_row..Playfield::TOTAL_HEIGHT {
+            for col in 1..=Playfield::WIDTH {
+                self.playfield.clear(row, col);
+            }
+        }
+    }
+
     /* * * * * * * * * *
      * Player actions. *
      * * * * * * * * * */
@@ -278,11 +336,96 @@ mod tests {
             engine.drop();
             assert_eq!(engine.current_piece.row, start_row - drop);
         }
-        // Futher attempts to drop will fail since would collide witht he obstacle.
+        // Futher attempts to drop will fail since it would collide with the obstacle.
         engine.drop();
         assert_eq!(engine.current_piece.row, start_row - 6);
         engine.drop();
         assert_eq!(engine.current_piece.row, start_row - 6);
+    }
+
+    #[test]
+    fn test_engine_lock() {
+        let mut engine = Engine::new();
+
+        // row 22, col 5 should be occupied by all shapes in spawn position.
+        // Drop down a few rows then lock piece into place.
+        engine.drop();
+        engine.drop();
+        engine.drop();
+        engine.drop();
+        engine.drop();
+
+        // Test space 5 rows below before and after locking in place.
+        assert_eq!(engine.playfield.get(17, 5), Space::Empty);
+        engine.lock();
+        assert_eq!(engine.playfield.get(17, 5), Space::Block);
+
+        // Do it again with another piece.
+        engine.next_piece();
+        engine.drop();
+        engine.drop();
+        engine.drop();
+        assert_eq!(engine.playfield.get(20, 5), Space::Empty);
+        engine.lock();
+        assert_eq!(engine.playfield.get(20, 5), Space::Block);
+    }
+
+    #[test]
+    fn test_clear_rows() {
+        let mut engine = Engine::new();
+
+        // Fill first, second, and fourth row.
+        for col in 1..=Playfield::WIDTH {
+            engine.playfield.set(1, col);
+            engine.playfield.set(2, col);
+            engine.playfield.set(4, col);
+        }
+        // Fill miscellaneous spaces in other rows.
+        engine.playfield.set(3, 3);
+        engine.playfield.set(3, 6);
+        engine.playfield.set(5, 1);
+        engine.playfield.set(6, 4);
+        engine.playfield.set(6, 10);
+        engine.playfield.set(7, 2);
+        engine.playfield.set(7, 5);
+        engine.playfield.set(7, 7);
+        engine.playfield.set(8, 9);
+
+        // Playfield should now look like this (ignoring empty rows).
+        // 8 --------#-
+        // 7 -#--#-#---
+        // 6 ---#-----#
+        // 5 #---------
+        // 4 ##########
+        // 3 --#--#----
+        // 2 ##########
+        // 1 ##########
+        //   1234567890
+
+        engine.clear_rows();
+        // Playfield should now look like this (ignoring empty rows).
+        // 5 --------#-
+        // 4 -#--#-#---
+        // 3 ---#-----#
+        // 2 #---------
+        // 1 --#--#----
+        //   1234567890
+        assert_eq!(engine.playfield.get(1, 3), Space::Block);
+        assert_eq!(engine.playfield.get(1, 6), Space::Block);
+        assert_eq!(engine.playfield.get(2, 1), Space::Block);
+        assert_eq!(engine.playfield.get(3, 4), Space::Block);
+        assert_eq!(engine.playfield.get(3, 10), Space::Block);
+        assert_eq!(engine.playfield.get(4, 2), Space::Block);
+        assert_eq!(engine.playfield.get(4, 5), Space::Block);
+        assert_eq!(engine.playfield.get(4, 7), Space::Block);
+        assert_eq!(engine.playfield.get(5, 9), Space::Block);
+
+        // Rows above should be empty.
+        for row in 6..=8 {
+            for col in 1..Playfield::WIDTH {
+                assert_eq!(engine.playfield.get(row, col), Space::Empty);
+            }
+        }
     }
 
     #[test]

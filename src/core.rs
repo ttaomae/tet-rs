@@ -38,7 +38,7 @@ impl Playfield {
     }
 
     // Clears the space at the specified row and column.
-    fn clear(&mut self, row: u8, col: u8) {
+    pub fn clear(&mut self, row: u8, col: u8) {
         Playfield::check_index(row, col);
         self.grid[row as usize - 1][col as usize - 1] = Space::Empty
     }

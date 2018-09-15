@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fmt;
 
 use rand::distributions::{Distribution, Standard};
@@ -9,6 +11,7 @@ use super::core::{Piece, Playfield, Space, Tetromino};
 struct Engine {
     playfield: Playfield,
     current_piece: CurrentPiece,
+    tetromino_generator: Box<TetrominoGenerator>,
 }
 
 /// The current piece on the playfield.
@@ -42,9 +45,12 @@ impl CurrentPiece {
 impl Engine {
     /// Creates a new engine with an empty playfield.
     fn new() -> Engine {
+        let tetromino_generator = Box::new(BagGenerator::new());
+        let current_piece = CurrentPiece::new(tetromino_generator.next());
         Engine {
             playfield: Playfield::new(),
-            current_piece: CurrentPiece::new(rand::random::<Tetromino>()),
+            current_piece,
+            tetromino_generator,
         }
     }
 
@@ -55,7 +61,7 @@ impl Engine {
 
     /// Sets the next current piece.
     fn next_piece(&mut self) {
-        self.current_piece = CurrentPiece::new(rand::random::<Tetromino>());
+        self.current_piece = CurrentPiece::new(self.tetromino_generator.next());
     }
 
     /// Returns whether or not there is a collision between the current piece and the playfield.
@@ -188,6 +194,49 @@ impl Engine {
     }
 }
 
+trait TetrominoGenerator {
+    fn next(&self) -> Tetromino;
+}
+
+struct BagGenerator {
+    bag: RefCell<VecDeque<Tetromino>>,
+}
+
+impl BagGenerator {
+    fn new() -> BagGenerator {
+        let mut bag = VecDeque::with_capacity(7);
+        bag.extend(BagGenerator::new_bag().iter());
+        BagGenerator {
+            bag: RefCell::from(bag),
+        }
+    }
+
+    fn new_bag() -> [Tetromino; 7] {
+        let mut bag = [
+            Tetromino::I,
+            Tetromino::O,
+            Tetromino::T,
+            Tetromino::S,
+            Tetromino::Z,
+            Tetromino::J,
+            Tetromino::L,
+        ];
+        rand::thread_rng().shuffle(&mut bag);
+        bag
+    }
+}
+
+impl TetrominoGenerator for BagGenerator {
+    fn next(&self) -> Tetromino {
+        if self.bag.borrow().is_empty() {
+            self.bag.borrow_mut().extend(BagGenerator::new_bag().iter());
+        }
+
+        // Since we fill the bag if it is empty, pop_front should always return Option::Some.
+        self.bag.borrow_mut().pop_front().unwrap()
+    }
+}
+
 impl Distribution<Tetromino> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Tetromino {
         let rand = rng.gen_range(0, 7);
@@ -266,20 +315,15 @@ mod tests {
     #[test]
     fn test_engine_next_piece() {
         let mut engine = Engine::new();
-        let mut unique_shapes = HashSet::new();
 
         for _ in 0..10 {
-            let piece = engine.current_piece.piece;
+            let mut piece = engine.current_piece.piece;
             assert_eq!(piece.get_rotation(), &Rotation::Spawn);
-            unique_shapes.insert(piece.get_shape().clone());
-            engine.next_piece();
-        }
+            // Rotate the piece and verify that next piece is in spawn rotation on next iteration.
+            piece.rotate_cw();
 
-        // Test that different pieces are being generated. Since pieces are selected randomly, we
-        // can't make any guarantees. However, after inserting 10 random pieces, the probability of
-        // only receiving the same shape every single time is (1/7)^10 == 3.5e-9. This should be
-        // sufficiently low that this test will rarely, if ever, fail.
-        assert!(unique_shapes.len() > 1);
+            engine.next_piece()
+        }
     }
 
     #[test]
@@ -561,5 +605,19 @@ mod tests {
         assert_eq!(engine.current_piece.col, far_right_col);
         engine.move_piece_right();
         assert_eq!(engine.current_piece.col, far_right_col);
+    }
+
+    #[test]
+    fn test_bag_generator() {
+        let bag_generator = BagGenerator::new();
+
+        // The bag generator should always generate tetrominos in sets containing one of each.
+        for _ in 0..5 {
+            let mut tetrominos = HashSet::new();
+            for _ in 0..7 {
+                tetrominos.insert(bag_generator.next());
+            }
+            assert_eq!(tetrominos.len(), 7);
+        }
     }
 }

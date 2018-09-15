@@ -161,6 +161,16 @@ impl Engine {
      * * * * * * * * * */
     // Actions initiated by the player.
 
+    /// Drops the piece as far as possible without collision, then locks it into place.
+    fn hard_drop(&mut self) {
+        while !self.has_collision() {
+            self.current_piece.row -= 1;
+        }
+        self.current_piece.row += 1;
+        self.lock();
+
+    }
+
     /// Rotates the current piece clockwise, if it does not result in a collision.
     fn rotate_piece_cw(&mut self) {
         self.current_piece.rotate_cw();
@@ -486,6 +496,33 @@ mod tests {
                 assert_eq!(engine.playfield.get(row, col), Space::Empty);
             }
         }
+    }
+
+    #[test]
+    fn test_engine_hard_drop() {
+        let mut engine = Engine::new();
+
+        // Column 5 is guaranteed to be occupied for all pieces in spawn position.
+        engine.hard_drop();
+        assert_eq!(engine.playfield.get(1, 5), Space::Block);
+
+        // Move piece to far left, then hard drop.
+        engine.next_piece();
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_left();
+        }
+        // Column 2 is guaranteed to be occupied for all pieces in far left.
+        engine.hard_drop();
+        assert_eq!(engine.playfield.get(1, 2), Space::Block);
+
+        // Move piece to far right, then hard drop.
+        engine.next_piece();
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_right();
+        }
+        // Column 9 is guaranteed to be occupied for all pieces in far right.
+        engine.hard_drop();
+        assert_eq!(engine.playfield.get(1, 9), Space::Block);
     }
 
     #[test]

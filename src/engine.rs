@@ -101,8 +101,8 @@ impl Engine {
                 // Collisions can only occur on blocks.
                 if bb_space == &Space::Block {
                     // Calculate position of space in playfield.
-                    let row = self.current_piece.row as u8 + row_offset as u8;
-                    let col = self.current_piece.col as u8 + col_offset as u8;
+                    let row = (self.current_piece.row + row_offset as i8) as u8;
+                    let col = (self.current_piece.col + col_offset as i8) as u8;
                     self.playfield.set(row as u8, col as u8);
                 }
             }
@@ -347,27 +347,43 @@ mod tests {
     fn test_engine_lock() {
         let mut engine = Engine::new();
 
-        // row 22, col 5 should be occupied by all shapes in spawn position.
-        // Drop down a few rows then lock piece into place.
-        engine.drop();
-        engine.drop();
-        engine.drop();
-        engine.drop();
-        engine.drop();
-
-        // Test space 5 rows below before and after locking in place.
-        assert_eq!(engine.playfield.get(17, 5), Space::Empty);
+        // Drop piece to bottom then lock into place.
+        for _ in 0..21 {
+            engine.drop();
+        }
+        // Column 5 is guaranteed to be occupied for all pieces in spawn position.
+        // Check that it is empty before locking and occupied after locking.
+        assert_eq!(engine.playfield.get(1, 5), Space::Empty);
         engine.lock();
-        assert_eq!(engine.playfield.get(17, 5), Space::Block);
+        assert_eq!(engine.playfield.get(1, 5), Space::Block);
 
-        // Do it again with another piece.
+        // Move piece to far left, drop piece to bottom, then lock into place.
         engine.next_piece();
-        engine.drop();
-        engine.drop();
-        engine.drop();
-        assert_eq!(engine.playfield.get(20, 5), Space::Empty);
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_left();
+        }
+        for _ in 0..21 {
+            engine.drop();
+        }
+        // Column 2 is guaranteed to be occupied for all pieces in far left.
+        // Check that it is empty before locking and occupied after locking.
+        assert_eq!(engine.playfield.get(1, 2), Space::Empty);
         engine.lock();
-        assert_eq!(engine.playfield.get(20, 5), Space::Block);
+        assert_eq!(engine.playfield.get(1, 2), Space::Block);
+
+        // Move piece to far right, drop piece to bottom, then lock into place.
+        engine.next_piece();
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_right();
+        }
+        for _ in 0..21 {
+            engine.drop();
+        }
+        // Column 9 is guaranteed to be occupied for all pieces in far right.
+        // Check that it is empty before locking and occupied after locking.
+        assert_eq!(engine.playfield.get(1, 9), Space::Empty);
+        engine.lock();
+        assert_eq!(engine.playfield.get(1, 9), Space::Block);
     }
 
     #[test]

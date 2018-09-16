@@ -12,6 +12,8 @@ struct Engine {
     playfield: Playfield,
     current_piece: CurrentPiece,
     tetromino_generator: Box<TetrominoGenerator>,
+    hold_piece: Option<Tetromino>,
+    is_hold_available: bool,
 }
 
 /// The current piece on the playfield.
@@ -51,6 +53,8 @@ impl Engine {
             playfield: Playfield::new(),
             current_piece,
             tetromino_generator,
+            hold_piece: Option::None,
+            is_hold_available: true,
         }
     }
 
@@ -62,6 +66,7 @@ impl Engine {
     /// Sets the next current piece.
     fn next_piece(&mut self) {
         self.current_piece = CurrentPiece::new(self.tetromino_generator.next());
+        self.is_hold_available = true;
     }
 
     /// Returns whether or not there is a collision between the current piece and the playfield.
@@ -196,10 +201,25 @@ impl Engine {
     }
 
     /// Moves the current piece one column to the right, if it does not result in a collision.
-    fn move_piece_right(&mut self) {
+    pub fn move_piece_right(&mut self) {
         self.current_piece.col += 1;
         if self.has_collision() {
             self.current_piece.col -= 1;
+        }
+    }
+
+    // Holds the current piece and replaces it with the existing hold piece or with the next piece
+    // if there was no hold piece.
+    fn hold_piece(&mut self) {
+        if self.is_hold_available {
+            let current_tetromino = *self.current_piece.piece.get_shape();
+
+            match self.hold_piece {
+                Option::Some(piece) => self.current_piece = CurrentPiece::new(piece),
+                Option::None => self.next_piece(),
+            }
+            self.hold_piece = Option::Some(current_tetromino);
+            self.is_hold_available = false;
         }
     }
 }
@@ -642,6 +662,36 @@ mod tests {
         assert_eq!(engine.current_piece.col, far_right_col);
         engine.move_piece_right();
         assert_eq!(engine.current_piece.col, far_right_col);
+    }
+
+    #[test]
+    fn test_engine_hold_piece() {
+        let mut engine = Engine::new();
+
+        //
+        assert!(engine.hold_piece.is_none());
+
+        let current_piece = engine.current_piece.piece.get_shape().clone();
+        engine.hold_piece();
+
+        let hold_piece = engine.hold_piece.unwrap();
+        assert_eq!(hold_piece, current_piece);
+
+        // Hold is only allowed once per piece.
+        let current_piece = engine.current_piece.piece.get_shape().clone();
+        engine.hold_piece();
+        assert_eq!(engine.hold_piece.unwrap(), hold_piece);
+        assert_eq!(engine.current_piece.piece.get_shape(), &current_piece);
+
+        engine.next_piece();
+
+        // Hold piece should be the same.
+        assert_eq!(engine.hold_piece.unwrap(), hold_piece);
+        // Since we are on the next piece hold should work again.
+        let current_piece = engine.current_piece.piece.get_shape().clone();
+        engine.hold_piece();
+        assert_eq!(engine.hold_piece.unwrap(), current_piece);
+        assert_eq!(engine.current_piece.piece.get_shape(), &hold_piece);
     }
 
     #[test]

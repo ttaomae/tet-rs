@@ -7,18 +7,21 @@ use rand::Rng;
 
 use super::core::{Piece, Playfield, Space, Tetromino};
 
+const GRAVITY: u8 = 20;
+
 /// The main game engine.
-struct Engine {
+pub struct Engine {
     playfield: Playfield,
     current_piece: CurrentPiece,
     tetromino_generator: Box<TetrominoGenerator>,
     hold_piece: Option<Tetromino>,
     is_hold_available: bool,
+    ticks_since_drop: u8,
 }
 
 /// The current piece on the playfield.
-#[derive(Debug, PartialEq, Eq)]
-struct CurrentPiece {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CurrentPiece {
     piece: Piece,
     // Position of lower-left corner of bounding box.
     row: i8,
@@ -42,11 +45,28 @@ impl CurrentPiece {
     fn rotate_ccw(&mut self) {
         self.piece.rotate_ccw();
     }
+
+    pub fn get_bounding_box(&self) -> [[Space; 4]; 4] {
+        self.piece.get_bounding_box()
+    }
+
+    pub fn get_row(&self) -> i8 {
+        self.row
+    }
+
+    pub fn get_col(&self) -> i8 {
+        self.col
+    }
+}
+
+enum DropResult {
+    Success,
+    Collision,
 }
 
 impl Engine {
     /// Creates a new engine with an empty playfield.
-    fn new() -> Engine {
+    pub fn new() -> Engine {
         let tetromino_generator = Box::new(BagGenerator::new());
         let current_piece = CurrentPiece::new(tetromino_generator.next());
         Engine {
@@ -55,13 +75,35 @@ impl Engine {
             tetromino_generator,
             hold_piece: Option::None,
             is_hold_available: true,
+            ticks_since_drop: 0,
         }
+    }
+
+    pub fn get_playfield(&self) -> Playfield {
+        self.playfield
+    }
+
+    pub fn get_current_piece(&self) -> CurrentPiece {
+        self.current_piece
     }
 
     /* * * * * * * * * *
      * Engine actions. *
      * * * * * * * * * */
     // Actions performed by the engine.
+
+    pub fn tick(&mut self) {
+        if self.ticks_since_drop == GRAVITY {
+            if let DropResult::Collision = self.drop() {
+                self.lock();
+                self.clear_rows();
+                self.next_piece();
+            }
+            self.ticks_since_drop = 0;
+        } else {
+            self.ticks_since_drop += 1;
+        }
+    }
 
     /// Sets the next current piece.
     fn next_piece(&mut self) {
@@ -96,10 +138,13 @@ impl Engine {
     }
 
     /// Drops the current piece by one row if it does not result in a collision.
-    fn drop(&mut self) {
+    fn drop(&mut self) -> DropResult {
         self.current_piece.row -= 1;
         if self.has_collision() {
             self.current_piece.row += 1;
+            DropResult::Collision
+        } else {
+            DropResult::Success
         }
     }
 
@@ -167,17 +212,16 @@ impl Engine {
     // Actions initiated by the player.
 
     /// Drops the piece as far as possible without collision, then locks it into place.
-    fn hard_drop(&mut self) {
+    pub fn hard_drop(&mut self) {
         while !self.has_collision() {
             self.current_piece.row -= 1;
         }
         self.current_piece.row += 1;
         self.lock();
-
     }
 
     /// Rotates the current piece clockwise, if it does not result in a collision.
-    fn rotate_piece_cw(&mut self) {
+    pub fn rotate_piece_cw(&mut self) {
         self.current_piece.rotate_cw();
         if self.has_collision() {
             self.current_piece.rotate_ccw();
@@ -185,7 +229,7 @@ impl Engine {
     }
 
     /// Rotates the current piece counter-clockwise, if it does not result in a collision.
-    fn rotate_piece_ccw(&mut self) {
+    pub fn rotate_piece_ccw(&mut self) {
         self.current_piece.rotate_ccw();
         if self.has_collision() {
             self.current_piece.rotate_cw();
@@ -193,7 +237,7 @@ impl Engine {
     }
 
     /// Moves the current piece one column to the left, if it does not result in a collision.
-    fn move_piece_left(&mut self) {
+    pub fn move_piece_left(&mut self) {
         self.current_piece.col -= 1;
         if self.has_collision() {
             self.current_piece.col += 1;
@@ -210,7 +254,7 @@ impl Engine {
 
     // Holds the current piece and replaces it with the existing hold piece or with the next piece
     // if there was no hold piece.
-    fn hold_piece(&mut self) {
+    pub fn hold_piece(&mut self) {
         if self.is_hold_available {
             let current_tetromino = *self.current_piece.piece.get_shape();
 

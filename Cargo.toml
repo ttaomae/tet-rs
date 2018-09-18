@@ -6,3 +6,6 @@ authors = ["Todd Taomae <ttaomae@gmail.com>"]
 
 [dependencies]
 rand = "0.5"
+piston = "0.37.0"
+piston_window = "0.80.0"
+piston2d-graphics = "0.26.0"

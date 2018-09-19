@@ -5,7 +5,7 @@ use std::fmt;
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
-use super::core::{Piece, Playfield, Space, Tetromino};
+use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
 
 const GRAVITY: u8 = 20;
 
@@ -113,13 +113,17 @@ impl Engine {
 
     /// Returns whether or not there is a collision between the current piece and the playfield.
     fn has_collision(&self) -> bool {
-        let bounding_box = self.current_piece.piece.get_bounding_box();
+        self.has_collision_with_piece(self.current_piece)
+    }
+
+    fn has_collision_with_piece(&self, piece: CurrentPiece) -> bool {
+        let bounding_box = piece.piece.get_bounding_box();
         // Iterate through spaces of bounding box.
         for (row_offset, bb_row) in bounding_box.iter().enumerate() {
             for (col_offset, bb_space) in bb_row.iter().enumerate() {
                 // Calculate position of space in playfield.
-                let row = self.current_piece.row + row_offset as i8;
-                let col = self.current_piece.col + col_offset as i8;
+                let row = piece.row + row_offset as i8;
+                let col = piece.col + col_offset as i8;
 
                 // Collisions can only occur on blocks.
                 if bb_space == &Space::Block
@@ -206,6 +210,89 @@ impl Engine {
         }
     }
 
+    /// Rotates the current piece and applies wall kick, if possible. Otherwise, does nothing.
+    fn rotate_piece<F>(&mut self, mut rotate: F)
+        where F: FnMut(&mut CurrentPiece)
+    {
+        let initial = self.current_piece.piece.get_rotation().clone();
+        let mut updated_piece = self.current_piece.clone();
+        rotate(&mut updated_piece);
+        let rotated = updated_piece.piece.get_rotation().clone();
+
+        if let Option::Some((col_offset, row_offset)) =
+            self.check_rotation(&mut updated_piece, initial, rotated)
+        {
+            self.current_piece.col += col_offset;
+            self.current_piece.row += row_offset;
+            rotate(&mut self.current_piece);
+        }
+    }
+
+    /// Checks whether or not the specified piece would collide with the playfield.
+    /// If it does, attempts to perform a wall kick based on the specified rotation.
+    /// Returns the offset which resulted in no collision as (col_offset, row_offset)
+    /// or `Option::None` if the rotation is not possible.
+    fn check_rotation(
+        &self,
+        piece: &mut CurrentPiece,
+        initial: Rotation,
+        rotated: Rotation,
+    ) -> Option<(i8, i8)> {
+        if !self.has_collision_with_piece(*piece) {
+            return Option::Some((0, 0));
+        }
+
+        use super::core::Rotation::*;
+        // A list of (col, row) offsets for the given piece and rotation.
+        let wall_kick_offsets = match piece.piece.get_shape() {
+            // O rotations are identical. Since the piece does not move between rotations,
+            // it cannot collide and should have passed the test above.
+            Tetromino::O => panic!("This should be impossible"),
+            // I has separate different wall kick rules.
+            Tetromino::I => match (initial, rotated) {
+                (Spawn, Clockwise) => vec![(-2, 0), (1, 0), (-2, -1), (1, 2)],
+                (Clockwise, Spawn) => vec![(2, 0), (-1, 0), (2, 1), (-1, -2)],
+                (Clockwise, OneEighty) => vec![(-1, 0), (2, 0), (-1, 2), (2, -1)],
+                (OneEighty, Clockwise) => vec![(1, 0), (-2, 0), (1, -2), (-2, 1)],
+                (OneEighty, CounterClockwise) => vec![(2, 0), (-1, 0), (2, 1), (-1, -2)],
+                (CounterClockwise, OneEighty) => vec![(-2, 0), (1, 0), (-2, -1), (1, 2)],
+                (CounterClockwise, Spawn) => vec![(1, 0), (-2, 0), (1, -2), (-2, 1)],
+                (Spawn, CounterClockwise) => vec![(-1, 0), (2, 0), (-1, 2), (2, -1)],
+                // The only cases left are 180 rotations, which are not supported.
+                _ => panic!("This should be impossible"),
+            },
+            // All other pieces follow the same rules.
+            _ => match (initial, rotated) {
+                (Spawn, Clockwise) => vec![(-1, 0), (-1, 1), (0, -2), (-1, -2)],
+                (Clockwise, Spawn) => vec![(1, 0), (1, -1), (0, 2), (1, 2)],
+                (Clockwise, OneEighty) => vec![(1, 0), (1, -1), (0, 2), (1, 2)],
+                (OneEighty, Clockwise) => vec![(-1, 0), (-1, 1), (0, -2), (-1, -2)],
+                (OneEighty, CounterClockwise) => vec![(1, 0), (1, 1), (0, -2), (1, -2)],
+                (CounterClockwise, OneEighty) => vec![(-1, 0), (-1, -1), (0, 2), (-1, 2)],
+                (CounterClockwise, Spawn) => vec![(-1, 0), (-1, -1), (0, 2), (-1, 2)],
+                (Spawn, CounterClockwise) => vec![(1, 0), (1, 1), (0, -2), (1, -2)],
+                // The only cases left are 180 rotations, which are not supported.
+                _ => panic!("This should be impossible"),
+            },
+        };
+
+        // Check each offset.
+        for offset in wall_kick_offsets {
+            piece.col += offset.0;
+            piece.row += offset.1;
+            // Return if there was no collision.
+            if !self.has_collision_with_piece(*piece) {
+                return Option::Some(offset);
+            }
+            // Reset position for next test.
+            piece.col -= offset.0;
+            piece.row -= offset.1;
+        }
+
+        // Could not find a valid wall kick.
+        Option::None
+    }
+
     /* * * * * * * * * *
      * Player actions. *
      * * * * * * * * * */
@@ -222,18 +309,12 @@ impl Engine {
 
     /// Rotates the current piece clockwise, if it does not result in a collision.
     pub fn rotate_piece_cw(&mut self) {
-        self.current_piece.rotate_cw();
-        if self.has_collision() {
-            self.current_piece.rotate_ccw();
-        }
+        self.rotate_piece(|p| p.rotate_cw());
     }
 
     /// Rotates the current piece counter-clockwise, if it does not result in a collision.
     pub fn rotate_piece_ccw(&mut self) {
-        self.current_piece.rotate_ccw();
-        if self.has_collision() {
-            self.current_piece.rotate_cw();
-        }
+        self.rotate_piece(|p| p.rotate_ccw());
     }
 
     /// Moves the current piece one column to the left, if it does not result in a collision.
@@ -638,15 +719,15 @@ mod tests {
     fn test_engine_rotate_piece_collision() {
         let mut engine = Engine::new();
 
-        // Create obstacle directly below spawn location.
-        engine.playfield.set(21, 4);
-        engine.playfield.set(21, 5);
-        engine.playfield.set(21, 6);
-        engine.playfield.set(21, 7);
-
-        // O piece will not collide, so get a new piece
-        while engine.current_piece.piece.get_shape() == &Tetromino::O {
+        // Select an I piece.
+        while engine.current_piece.piece.get_shape() != &Tetromino::I {
             engine.next_piece();
+        }
+
+        // Surround above and below to prevent rotation.
+        for col in 4..=7 {
+            engine.playfield.set(21, col);
+            engine.playfield.set(23, col);
         }
 
         // attempt rotate
@@ -655,7 +736,45 @@ mod tests {
 
         engine.rotate_piece_ccw();
         assert_eq!(engine.current_piece.piece.get_rotation(), &Rotation::Spawn);
-        // assert rotation == spawn
+    }
+
+    #[test]
+    fn test_engine_rotate_piece_wall_kick() {
+        let mut engine = Engine::new();
+
+        // ----------
+        // --#-------
+        // ---#------
+        engine.playfield.set(1, 4);
+        engine.playfield.set(2, 3);
+
+        // Setup wall kick using T piece.
+        // T---------
+        // TT#-------
+        // T--#------
+        while engine.current_piece.piece.get_shape() != &Tetromino::T {
+            engine.next_piece();
+        }
+        engine.rotate_piece_cw();
+        for _ in 0..Playfield::WIDTH {
+            engine.move_piece_left();
+        }
+        for _ in 0..Playfield::TOTAL_HEIGHT {
+            engine.drop();
+        }
+
+        // Perform wall kick and lock into place.
+        // ----------
+        // -T#-------
+        // TTT#------
+        engine.rotate_piece_ccw();
+        engine.lock();
+
+        // Check that piece in expected position.
+        assert_eq!(engine.playfield.get(1, 1), Space::Block);
+        assert_eq!(engine.playfield.get(1, 2), Space::Block);
+        assert_eq!(engine.playfield.get(1, 3), Space::Block);
+        assert_eq!(engine.playfield.get(2, 2), Space::Block);
     }
 
     #[test]

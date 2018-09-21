@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt;
 
@@ -8,6 +10,8 @@ use rand::Rng;
 use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
 
 const GRAVITY: u8 = 20;
+const AUTO_REPEAT_DELAY: u32 = 12;
+const AUTO_REPEAT_RATE: u32 = 7;
 
 /// The main game engine.
 pub struct Engine {
@@ -17,7 +21,30 @@ pub struct Engine {
     hold_piece: Option<Tetromino>,
     is_hold_available: bool,
     ticks_since_drop: u8,
+    current_tick_inputs: RefCell<HashSet<Action>>,
+    current_inputs: HashMap<Action, u32>,
 }
+
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
+enum Action {
+    MoveLeft,
+    MoveRight,
+    RotateClockwise,
+    RotateCounterClockwise,
+    SoftDrop,
+    HardDrop,
+    Hold,
+}
+
+const ALL_ACTIONS: [Action; 7] = [
+    Action::MoveLeft,
+    Action::MoveRight,
+    Action::RotateClockwise,
+    Action::RotateCounterClockwise,
+    Action::SoftDrop,
+    Action::HardDrop,
+    Action::Hold,
+];
 
 /// The current piece on the playfield.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -69,6 +96,10 @@ impl Engine {
     pub fn new() -> Engine {
         let tetromino_generator = Box::new(BagGenerator::new());
         let current_piece = CurrentPiece::new(tetromino_generator.next());
+        let mut current_inputs = HashMap::new();
+        for action in ALL_ACTIONS.iter() {
+            current_inputs.insert(*action, 0u32);
+        }
         Engine {
             playfield: Playfield::new(),
             current_piece,
@@ -76,6 +107,8 @@ impl Engine {
             hold_piece: Option::None,
             is_hold_available: true,
             ticks_since_drop: 0,
+            current_tick_inputs: RefCell::new(HashSet::new()),
+            current_inputs,
         }
     }
 
@@ -93,14 +126,133 @@ impl Engine {
     // Actions performed by the engine.
 
     pub fn tick(&mut self) {
-        if self.ticks_since_drop == GRAVITY {
+        let actions = self.get_actions();
+        if !self.apply_hold(&actions) {
+            self.apply_piece_move(&actions);
+            self.apply_piece_rotation(&actions);
+            self.apply_gravity(&actions);
+        }
+    }
+
+    /// Processes input and returns a list of actions to perform on this tick.
+    fn get_actions(&mut self) -> HashSet<Action> {
+        // Clear current_tick_inputs and update current_inputs.
+        for action in ALL_ACTIONS.iter() {
+            if self.current_tick_inputs.borrow_mut().remove(&action) {
+                match self.current_inputs.get_mut(&action) {
+                    Option::Some(duration) => {
+                        *duration += 1;
+                    },
+                    Option::None => panic!(),
+                }
+            }
+            else {
+                match self.current_inputs.get_mut(&action) {
+                    Option::Some(duration) => *duration = 0,
+                    Option::None => panic!(),
+                }
+            }
+        }
+
+        // Special case: When 'left' and 'right' input are both pressed at the same time, give
+        // priority to 'left'. Reset 'right' duration so that when 'left' is released, 'right'
+        // starts with duration zero rather than being in the middle of auto-repeat, which would
+        // lead to inconsistent behavior.
+        if let Option::Some(duration) = self.current_inputs.get(&Action::MoveLeft) {
+            if *duration > 0u32 {
+                self.current_inputs.insert(Action::MoveRight, 0);
+            }
+        }
+
+        let mut current_turn_actions = HashSet::new();
+        // Iterate through inputs and determine which actions are valid.
+        for (action, duration) in self.current_inputs.iter() {
+            use self::Action::*;
+            match action {
+                // These actions are only valid on initial press.
+                Hold | RotateClockwise | RotateCounterClockwise | HardDrop => {
+                    if *duration == 1 {
+                        current_turn_actions.insert(*action);
+                    }
+                },
+                // This is always valid if pressed.
+                SoftDrop => {
+                    if *duration >= 1 {
+                        current_turn_actions.insert(*action);
+                    }
+                },
+                // This is valid on first press, when reaching auto-repeat delay,
+                // or on intervals based on the auto-repeat rate.
+                MoveLeft | MoveRight => {
+                    if *duration == 1 || *duration == AUTO_REPEAT_DELAY
+                        || *duration > AUTO_REPEAT_DELAY && (*duration - AUTO_REPEAT_DELAY) % AUTO_REPEAT_RATE == 0
+                    {
+                        current_turn_actions.insert(*action);
+                    }
+                },
+            }
+        }
+
+        current_turn_actions
+    }
+
+    /// Attempts to hold the current piece if it is one of the specified actions.
+    /// Returns whether or not the the hold was successful.
+    fn apply_hold(&mut self, actions: &HashSet<Action>) -> bool {
+        if actions.contains(&Action::Hold) {
+            if self.is_hold_available {
+                let current_tetromino = *self.current_piece.piece.get_shape();
+
+                match self.hold_piece {
+                    Option::Some(piece) => self.current_piece = CurrentPiece::new(piece),
+                    Option::None => self.next_piece(),
+                }
+                self.hold_piece = Option::Some(current_tetromino);
+                self.is_hold_available = false;
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Applies move if contained in the specified action set.
+    /// Left moves are given priority over left moves.
+    fn apply_piece_move(&mut self, actions: &HashSet<Action>) {
+        if actions.contains(&Action::MoveLeft) {
+            self.move_piece(-1);
+        } else if actions.contains(&Action::MoveRight) {
+            self.move_piece(1);
+        }
+    }
+
+    /// Applies rotation if contained in the specified action set.
+    /// Clockwise rotation is given priority over counter-clockwise rotations.
+    fn apply_piece_rotation(&mut self, actions: &HashSet<Action>) {
+            if actions.contains(&Action::RotateClockwise) {
+                self.rotate_piece(|p| p.rotate_cw());
+            } else if actions.contains(&Action::RotateCounterClockwise) {
+                self.rotate_piece(|p| p.rotate_ccw());
+            }
+    }
+
+    /// Applies gravity, given the specified action set.
+    fn apply_gravity(&mut self, actions: &HashSet<Action>) {
+        if actions.contains(&Action::HardDrop) {
+            // Do not apply hard drop if piece was held this turn.
+            if !actions.contains(&Action::Hold) {
+                while let DropResult::Success = self.drop() {}
+                self.lock_clear_next();
+                self.ticks_since_drop = 0;
+            }
+        }
+        else if self.ticks_since_drop == GRAVITY {
             if let DropResult::Collision = self.drop() {
-                self.lock();
-                self.clear_rows();
-                self.next_piece();
+                self.lock_clear_next();
             }
             self.ticks_since_drop = 0;
-        } else {
+        }
+        else {
             self.ticks_since_drop += 1;
         }
     }
@@ -150,6 +302,12 @@ impl Engine {
         } else {
             DropResult::Success
         }
+    }
+
+    fn lock_clear_next(&mut self) {
+        self.lock();
+        self.clear_rows();
+        self.next_piece();
     }
 
     /// Locks the current piece into it's current location.
@@ -210,9 +368,18 @@ impl Engine {
         }
     }
 
+    // Moves the current piece horizontally by up to the specified amount.
+    fn move_piece(&mut self, col_offset: i8) {
+        for _ in 0..col_offset.abs() {
+            self.current_piece.col += col_offset.signum();
+            if self.has_collision() {
+                self.current_piece.col -= col_offset.signum();
+            }
+        }
+    }
+
     /// Rotates the current piece and applies wall kick, if possible. Otherwise, does nothing.
-    fn rotate_piece<F>(&mut self, mut rotate: F)
-        where F: FnMut(&mut CurrentPiece)
+    fn rotate_piece<F>(&mut self, mut rotate: F) where F: FnMut(&mut CurrentPiece)
     {
         let initial = self.current_piece.piece.get_rotation().clone();
         let mut updated_piece = self.current_piece.clone();
@@ -299,7 +466,7 @@ impl Engine {
     // Actions initiated by the player.
 
     /// Drops the piece as far as possible without collision, then locks it into place.
-    pub fn hard_drop(&mut self) {
+    fn hard_drop(&mut self) {
         while !self.has_collision() {
             self.current_piece.row -= 1;
         }
@@ -308,17 +475,17 @@ impl Engine {
     }
 
     /// Rotates the current piece clockwise, if it does not result in a collision.
-    pub fn rotate_piece_cw(&mut self) {
+    fn rotate_piece_cw(&mut self) {
         self.rotate_piece(|p| p.rotate_cw());
     }
 
     /// Rotates the current piece counter-clockwise, if it does not result in a collision.
-    pub fn rotate_piece_ccw(&mut self) {
+    fn rotate_piece_ccw(&mut self) {
         self.rotate_piece(|p| p.rotate_ccw());
     }
 
     /// Moves the current piece one column to the left, if it does not result in a collision.
-    pub fn move_piece_left(&mut self) {
+    fn move_piece_left(&mut self) {
         self.current_piece.col -= 1;
         if self.has_collision() {
             self.current_piece.col += 1;
@@ -326,7 +493,7 @@ impl Engine {
     }
 
     /// Moves the current piece one column to the right, if it does not result in a collision.
-    pub fn move_piece_right(&mut self) {
+    fn move_piece_right(&mut self) {
         self.current_piece.col += 1;
         if self.has_collision() {
             self.current_piece.col -= 1;
@@ -335,7 +502,7 @@ impl Engine {
 
     // Holds the current piece and replaces it with the existing hold piece or with the next piece
     // if there was no hold piece.
-    pub fn hold_piece(&mut self) {
+    fn hold_piece(&mut self) {
         if self.is_hold_available {
             let current_tetromino = *self.current_piece.piece.get_shape();
 
@@ -346,6 +513,38 @@ impl Engine {
             self.hold_piece = Option::Some(current_tetromino);
             self.is_hold_available = false;
         }
+    }
+
+    fn input_action(&self, action: Action) {
+        self.current_tick_inputs.borrow_mut().insert(action);
+    }
+
+    pub fn input_move_left(&self) {
+        self.input_action(Action::MoveLeft);
+    }
+
+    pub fn input_move_right(&self) {
+        self.input_action(Action::MoveRight);
+    }
+
+    pub fn input_rotate_cw(&self) {
+        self.input_action(Action::RotateClockwise);
+    }
+
+    pub fn input_rotate_ccw(&self) {
+        self.input_action(Action::RotateCounterClockwise);
+    }
+
+    pub fn input_soft_drop(&self) {
+        self.input_action(Action::SoftDrop);
+    }
+
+    pub fn input_hard_drop(&self) {
+        self.input_action(Action::HardDrop);
+    }
+
+    pub fn input_hold(&self) {
+        self.input_action(Action::Hold);
     }
 }
 

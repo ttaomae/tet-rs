@@ -1,6 +1,8 @@
 mod core;
 mod engine;
 
+use std::collections::HashSet;
+
 use graphics::{
     draw_state::DrawState,
     rectangle::{Rectangle, Shape},
@@ -32,6 +34,7 @@ fn main() {
     window.set_ups(60);
 
     let mut engine = Engine::new();
+    let mut pressed_keys = HashSet::new();
 
     while let Some(event) = window.next() {
         match event {
@@ -41,13 +44,15 @@ fn main() {
                         render(&engine, graphics);
                     });
                 }
-                Loop::Update(_) => {
+                Loop::Update(_) =>
+                {
+                    handle_input(&mut engine, &pressed_keys);
                     engine.tick();
                 }
                 _ => window.event(&event),
             },
             Event::Input(Input::Button(button_args)) => {
-                handle_input(&mut engine, button_args);
+                update_held_keys(&mut pressed_keys, button_args);
             }
             _ => window.event(&event),
         }
@@ -148,18 +153,24 @@ fn render<G: Graphics>(engine: &Engine, graphics: &mut G) {
     }
 }
 
-fn handle_input(engine: &mut Engine, button_args: ButtonArgs) {
+fn update_held_keys(held_keys: &mut HashSet<Key>, button_args: ButtonArgs) {
     if let Button::Keyboard(key) = button_args.button {
-        if button_args.state == ButtonState::Press {
-            match key {
-                Key::Left => engine.move_piece_left(),
-                Key::Right => engine.move_piece_right(),
-                Key::Space => engine.hard_drop(),
-                Key::Z => engine.rotate_piece_ccw(),
-                Key::X => engine.rotate_piece_cw(),
-                Key::C => engine.hold_piece(),
-                _ => {}
-            };
+        match button_args.state {
+            ButtonState::Press => held_keys.insert(key),
+            ButtonState::Release => held_keys.remove(&key),
+        };
+    }
+}
+fn handle_input(engine: &mut Engine, held_keys: &HashSet<Key>) {
+    for key in held_keys.iter() {
+        match key {
+            Key::Left => engine.input_move_left(),
+            Key::Right => engine.input_move_right(),
+            Key::Space => engine.input_hard_drop(),
+            Key::Z => engine.input_rotate_ccw(),
+            Key::X => engine.input_rotate_cw(),
+            Key::C => engine.input_hold(),
+            _ => {}
         }
     }
 }

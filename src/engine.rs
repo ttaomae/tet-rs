@@ -210,6 +210,8 @@ impl Engine {
         false
     }
 
+    /// Holds the current piece. Swaps with the current hold piece, if it exists, or generates the
+    /// next piece if there is no current hold piece.
     fn hold_piece(&mut self) {
         let current_tetromino = *self.current_piece.piece.get_shape();
 
@@ -267,11 +269,13 @@ impl Engine {
         self.is_hold_available = true;
     }
 
-    /// Returns whether or not there is a collision between the current piece and the playfield.
+    /// Returns whether or not there is a collision between the playfield and the current piece.
     fn has_collision(&self) -> bool {
         self.has_collision_with_piece(self.current_piece)
     }
 
+    /// Returns whether or not there would be a collision
+    /// between the playfield and the specified piece.
     fn has_collision_with_piece(&self, piece: CurrentPiece) -> bool {
         let bounding_box = piece.piece.get_bounding_box();
         // Iterate through spaces of bounding box.
@@ -315,6 +319,7 @@ impl Engine {
         DropResult::Success
     }
 
+    /// Locks the current piece into place, clears rows if necessary, then generates next the piece.
     fn lock_clear_next(&mut self) {
         self.lock();
         self.clear_rows();
@@ -379,7 +384,7 @@ impl Engine {
         }
     }
 
-    // Moves the current piece horizontally by up to the specified amount.
+    /// Moves the current piece horizontally by up to the specified amount.
     fn move_piece(&mut self, col_offset: i8) {
         for _ in 0..col_offset.abs() {
             self.current_piece.col += col_offset.signum();

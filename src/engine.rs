@@ -434,6 +434,31 @@ mod tests {
     use crate::core::*;
     use std::collections::HashSet;
 
+    enum SingleTetrominoGenerator {
+        I,
+        O,
+        T,
+        S,
+        Z,
+        J,
+        L,
+    }
+
+    /// Always generate the same tetromino.
+    impl TetrominoGenerator for SingleTetrominoGenerator {
+        fn next(&self) -> Tetromino {
+            match self {
+                SingleTetrominoGenerator::I => Tetromino::I,
+                SingleTetrominoGenerator::O => Tetromino::O,
+                SingleTetrominoGenerator::T => Tetromino::T,
+                SingleTetrominoGenerator::S => Tetromino::S,
+                SingleTetrominoGenerator::Z => Tetromino::Z,
+                SingleTetrominoGenerator::J => Tetromino::J,
+                SingleTetrominoGenerator::L => Tetromino::L,
+            }
+        }
+    }
+
     #[test]
     fn test_engine_new() {
         let engine = Engine::new();
@@ -646,18 +671,22 @@ mod tests {
     #[test]
     fn test_engine_hard_drop() {
         let mut engine = Engine::new();
+        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::O);
+        engine.next_piece();
 
-        // Column 5 is guaranteed to be occupied for all pieces in spawn position.
+        // O spawns in columns 5/6
         engine.hard_drop();
         assert_eq!(engine.playfield.get(1, 5), Space::Block);
+        assert_eq!(engine.playfield.get(1, 6), Space::Block);
 
         // Move piece to far left, then hard drop.
         engine.next_piece();
         for _ in 0..Playfield::WIDTH {
             engine.move_piece_left();
         }
-        // Column 2 is guaranteed to be occupied for all pieces in far left.
+        // O should occupy columns 1/2.
         engine.hard_drop();
+        assert_eq!(engine.playfield.get(1, 1), Space::Block);
         assert_eq!(engine.playfield.get(1, 2), Space::Block);
 
         // Move piece to far right, then hard drop.
@@ -665,9 +694,10 @@ mod tests {
         for _ in 0..Playfield::WIDTH {
             engine.move_piece_right();
         }
-        // Column 9 is guaranteed to be occupied for all pieces in far right.
+        // O should occupy columns 1/2.
         engine.hard_drop();
         assert_eq!(engine.playfield.get(1, 9), Space::Block);
+        assert_eq!(engine.playfield.get(1, 10), Space::Block);
     }
 
     #[test]
@@ -718,11 +748,8 @@ mod tests {
     #[test]
     fn test_engine_rotate_piece_collision() {
         let mut engine = Engine::new();
-
-        // Select an I piece.
-        while engine.current_piece.piece.get_shape() != &Tetromino::I {
-            engine.next_piece();
-        }
+        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::I);
+        engine.next_piece();
 
         // Surround above and below to prevent rotation.
         for col in 4..=7 {
@@ -741,20 +768,15 @@ mod tests {
     #[test]
     fn test_engine_rotate_piece_wall_kick() {
         let mut engine = Engine::new();
+        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::T);
+        engine.next_piece();
 
-        // ----------
-        // --#-------
-        // ---#------
-        engine.playfield.set(1, 4);
-        engine.playfield.set(2, 3);
-
-        // Setup wall kick using T piece.
+        // Setup wall kick
         // T---------
         // TT#-------
         // T--#------
-        while engine.current_piece.piece.get_shape() != &Tetromino::T {
-            engine.next_piece();
-        }
+        engine.playfield.set(1, 4);
+        engine.playfield.set(2, 3);
         engine.rotate_piece_cw();
         for _ in 0..Playfield::WIDTH {
             engine.move_piece_left();

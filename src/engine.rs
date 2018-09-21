@@ -201,19 +201,23 @@ impl Engine {
     fn apply_hold(&mut self, actions: &HashSet<Action>) -> bool {
         if actions.contains(&Action::Hold) {
             if self.is_hold_available {
-                let current_tetromino = *self.current_piece.piece.get_shape();
-
-                match self.hold_piece {
-                    Option::Some(piece) => self.current_piece = CurrentPiece::new(piece),
-                    Option::None => self.next_piece(),
-                }
-                self.hold_piece = Option::Some(current_tetromino);
+                self.hold_piece();
                 self.is_hold_available = false;
                 return true;
             }
         }
 
         false
+    }
+
+    fn hold_piece(&mut self) {
+        let current_tetromino = *self.current_piece.piece.get_shape();
+
+        match self.hold_piece {
+            Option::Some(piece) => self.current_piece = CurrentPiece::new(piece),
+            Option::None => self.next_piece(),
+        }
+        self.hold_piece = Option::Some(current_tetromino);
     }
 
     /// Applies move if contained in the specified action set.
@@ -230,9 +234,9 @@ impl Engine {
     /// Clockwise rotation is given priority over counter-clockwise rotations.
     fn apply_piece_rotation(&mut self, actions: &HashSet<Action>) {
             if actions.contains(&Action::RotateClockwise) {
-                self.rotate_piece(|p| p.rotate_cw());
+                self.rotate_piece_cw();
             } else if actions.contains(&Action::RotateCounterClockwise) {
-                self.rotate_piece(|p| p.rotate_ccw());
+                self.rotate_piece_ccw();
             }
     }
 
@@ -241,13 +245,13 @@ impl Engine {
         if actions.contains(&Action::HardDrop) {
             // Do not apply hard drop if piece was held this turn.
             if !actions.contains(&Action::Hold) {
-                while let DropResult::Success = self.drop() {}
+                self.drop(Playfield::TOTAL_HEIGHT);
                 self.lock_clear_next();
                 self.ticks_since_drop = 0;
             }
         }
         else if self.ticks_since_drop == GRAVITY {
-            if let DropResult::Collision = self.drop() {
+            if let DropResult::Collision = self.drop_one() {
                 self.lock_clear_next();
             }
             self.ticks_since_drop = 0;
@@ -294,14 +298,21 @@ impl Engine {
     }
 
     /// Drops the current piece by one row if it does not result in a collision.
-    fn drop(&mut self) -> DropResult {
-        self.current_piece.row -= 1;
-        if self.has_collision() {
-            self.current_piece.row += 1;
-            DropResult::Collision
-        } else {
-            DropResult::Success
+    fn drop_one(&mut self) -> DropResult {
+        self.drop(1)
+    }
+
+    /// Drops the current piece by up to the specified number of row, or until there is a collision.
+    fn drop(&mut self, n_rows: u8) -> DropResult {
+        for _ in 0..n_rows {
+            self.current_piece.row -= 1;
+            if self.has_collision() {
+                self.current_piece.row += 1;
+                return DropResult::Collision;
+            }
         }
+
+        DropResult::Success
     }
 
     fn lock_clear_next(&mut self) {
@@ -376,6 +387,16 @@ impl Engine {
                 self.current_piece.col -= col_offset.signum();
             }
         }
+    }
+
+    /// Rotates the current piece clockwise.
+    fn rotate_piece_cw(&mut self) {
+        self.rotate_piece(|p| p.rotate_cw());
+    }
+
+    /// Rotates the current piece counter-clockwise.
+    fn rotate_piece_ccw(&mut self) {
+        self.rotate_piece(|p| p.rotate_ccw());
     }
 
     /// Rotates the current piece and applies wall kick, if possible. Otherwise, does nothing.
@@ -461,59 +482,9 @@ impl Engine {
     }
 
     /* * * * * * * * * *
-     * Player actions. *
+     * Player inputs. *
      * * * * * * * * * */
-    // Actions initiated by the player.
-
-    /// Drops the piece as far as possible without collision, then locks it into place.
-    fn hard_drop(&mut self) {
-        while !self.has_collision() {
-            self.current_piece.row -= 1;
-        }
-        self.current_piece.row += 1;
-        self.lock();
-    }
-
-    /// Rotates the current piece clockwise, if it does not result in a collision.
-    fn rotate_piece_cw(&mut self) {
-        self.rotate_piece(|p| p.rotate_cw());
-    }
-
-    /// Rotates the current piece counter-clockwise, if it does not result in a collision.
-    fn rotate_piece_ccw(&mut self) {
-        self.rotate_piece(|p| p.rotate_ccw());
-    }
-
-    /// Moves the current piece one column to the left, if it does not result in a collision.
-    fn move_piece_left(&mut self) {
-        self.current_piece.col -= 1;
-        if self.has_collision() {
-            self.current_piece.col += 1;
-        }
-    }
-
-    /// Moves the current piece one column to the right, if it does not result in a collision.
-    fn move_piece_right(&mut self) {
-        self.current_piece.col += 1;
-        if self.has_collision() {
-            self.current_piece.col -= 1;
-        }
-    }
-
-    // Holds the current piece and replaces it with the existing hold piece or with the next piece
-    // if there was no hold piece.
-    fn hold_piece(&mut self) {
-        if self.is_hold_available {
-            let current_tetromino = *self.current_piece.piece.get_shape();
-
-            match self.hold_piece {
-                Option::Some(piece) => self.current_piece = CurrentPiece::new(piece),
-                Option::None => self.next_piece(),
-            }
-            self.hold_piece = Option::Some(current_tetromino);
-            self.is_hold_available = false;
-        }
-    }
+    // Methods to indicate inputs for the current tick.
 
     fn input_action(&self, action: Action) {
         self.current_tick_inputs.borrow_mut().insert(action);
@@ -720,16 +691,20 @@ mod tests {
         let mut engine = Engine::new();
         let start_row = engine.current_piece.row;
 
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 1);
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 2);
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 3);
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 4);
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 5);
+        engine.drop(2);
+        assert_eq!(engine.current_piece.row, start_row - 7);
+        engine.drop(4);
+        assert_eq!(engine.current_piece.row, start_row - 11);
     }
 
     #[test]
@@ -739,16 +714,22 @@ mod tests {
 
         // Bottom of tetromino should start on row 22, so we should be able to drop 21 rows.
         for drop in 1..=21 {
-            engine.drop();
+            engine.drop_one();
             assert_eq!(engine.current_piece.row, start_row - drop);
         }
 
         // The tetromino should be at the bottom of the playfield
         // so dropping again should have no effect.
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 21);
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 21);
+
+        // Perform same test with drop().
+        engine.next_piece();
+        engine.drop(25);
+        assert_eq!(engine.current_piece.row, start_row - 21);
+
 
         // Add an obstacle, then test that piece cannot drop past it.
         engine.next_piece();
@@ -756,56 +737,62 @@ mod tests {
 
         // We should be able to drop 6 rows before hitting the obstacle.
         for drop in 1..=6 {
-            engine.drop();
+            engine.drop_one();
             assert_eq!(engine.current_piece.row, start_row - drop);
         }
         // Futher attempts to drop will fail since it would collide with the obstacle.
-        engine.drop();
+        engine.drop_one();
         assert_eq!(engine.current_piece.row, start_row - 6);
-        engine.drop();
+        engine.drop(4);
+        assert_eq!(engine.current_piece.row, start_row - 6);
+
+        // Perform same test with drop().
+        engine.next_piece();
+        engine.drop(10);
         assert_eq!(engine.current_piece.row, start_row - 6);
     }
 
     #[test]
     fn test_engine_lock() {
         let mut engine = Engine::new();
+        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::S);
+        engine.next_piece();
 
-        // Drop piece to bottom then lock into place.
-        for _ in 0..21 {
-            engine.drop();
-        }
-        // Column 5 is guaranteed to be occupied for all pieces in spawn position.
-        // Check that it is empty before locking and occupied after locking.
+        // Drop and lock three S tetrominos in spawn position, far left, and far right.
+        // Check before and after locking that expected pieces are empty/occupied.
+
+        // -##-##--##
+        // ##-##--##-
+        // 1234567890
+
+
+        // Spawn position.
+        engine.next_piece();
+        engine.drop(21);
+        assert_eq!(engine.playfield.get(1, 4), Space::Empty);
         assert_eq!(engine.playfield.get(1, 5), Space::Empty);
         engine.lock();
+        assert_eq!(engine.playfield.get(1, 4), Space::Block);
         assert_eq!(engine.playfield.get(1, 5), Space::Block);
 
-        // Move piece to far left, drop piece to bottom, then lock into place.
+        // Far left.
         engine.next_piece();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_left();
-        }
-        for _ in 0..21 {
-            engine.drop();
-        }
-        // Column 2 is guaranteed to be occupied for all pieces in far left.
-        // Check that it is empty before locking and occupied after locking.
+        engine.move_piece(-10);
+        engine.drop(21);
+        assert_eq!(engine.playfield.get(1, 1), Space::Empty);
         assert_eq!(engine.playfield.get(1, 2), Space::Empty);
         engine.lock();
+        assert_eq!(engine.playfield.get(1, 1), Space::Block);
         assert_eq!(engine.playfield.get(1, 2), Space::Block);
 
-        // Move piece to far right, drop piece to bottom, then lock into place.
+        // Far right.
         engine.next_piece();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_right();
-        }
-        for _ in 0..21 {
-            engine.drop();
-        }
-        // Column 9 is guaranteed to be occupied for all pieces in far right.
-        // Check that it is empty before locking and occupied after locking.
+        engine.move_piece(10);
+        engine.drop(21);
+        assert_eq!(engine.playfield.get(1, 8), Space::Empty);
         assert_eq!(engine.playfield.get(1, 9), Space::Empty);
         engine.lock();
+        assert_eq!(engine.playfield.get(1, 8), Space::Block);
         assert_eq!(engine.playfield.get(1, 9), Space::Block);
     }
 
@@ -865,38 +852,6 @@ mod tests {
                 assert_eq!(engine.playfield.get(row, col), Space::Empty);
             }
         }
-    }
-
-    #[test]
-    fn test_engine_hard_drop() {
-        let mut engine = Engine::new();
-        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::O);
-        engine.next_piece();
-
-        // O spawns in columns 5/6
-        engine.hard_drop();
-        assert_eq!(engine.playfield.get(1, 5), Space::Block);
-        assert_eq!(engine.playfield.get(1, 6), Space::Block);
-
-        // Move piece to far left, then hard drop.
-        engine.next_piece();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_left();
-        }
-        // O should occupy columns 1/2.
-        engine.hard_drop();
-        assert_eq!(engine.playfield.get(1, 1), Space::Block);
-        assert_eq!(engine.playfield.get(1, 2), Space::Block);
-
-        // Move piece to far right, then hard drop.
-        engine.next_piece();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_right();
-        }
-        // O should occupy columns 1/2.
-        engine.hard_drop();
-        assert_eq!(engine.playfield.get(1, 9), Space::Block);
-        assert_eq!(engine.playfield.get(1, 10), Space::Block);
     }
 
     #[test]
@@ -977,12 +932,8 @@ mod tests {
         engine.playfield.set(1, 4);
         engine.playfield.set(2, 3);
         engine.rotate_piece_cw();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_left();
-        }
-        for _ in 0..Playfield::TOTAL_HEIGHT {
-            engine.drop();
-        }
+        engine.move_piece(-10);
+        engine.drop(21);
 
         // Perform wall kick and lock into place.
         // ----------
@@ -1004,20 +955,20 @@ mod tests {
 
         // Test move left.
         let start_col = engine.current_piece.col;
-        engine.move_piece_left();
+        engine.move_piece(-1);
         assert_eq!(engine.current_piece.col, start_col - 1);
-        engine.move_piece_left();
+        engine.move_piece(-1);
         assert_eq!(engine.current_piece.col, start_col - 2);
-        engine.move_piece_left();
+        engine.move_piece(-1);
         assert_eq!(engine.current_piece.col, start_col - 3);
 
         // Spawn a new piece then test move right.
         let start_col = engine.current_piece.col;
-        engine.move_piece_right();
+        engine.move_piece(1);
         assert_eq!(engine.current_piece.col, start_col + 1);
-        engine.move_piece_right();
+        engine.move_piece(1);
         assert_eq!(engine.current_piece.col, start_col + 2);
-        engine.move_piece_right();
+        engine.move_piece(1);
         assert_eq!(engine.current_piece.col, start_col + 3);
     }
 
@@ -1026,25 +977,21 @@ mod tests {
         let mut engine = Engine::new();
 
         // Spawn new piece then move to far left.
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_left();
-        }
+        engine.move_piece(-10);
         // Moving further left should have no effect.
         let far_left_col = engine.current_piece.col;
-        engine.move_piece_left();
+        engine.move_piece(-1);
         assert_eq!(engine.current_piece.col, far_left_col);
-        engine.move_piece_left();
+        engine.move_piece(-1);
         assert_eq!(engine.current_piece.col, far_left_col);
 
         // Spawn new piece then do same as above, but move right.
         engine.next_piece();
-        for _ in 0..Playfield::WIDTH {
-            engine.move_piece_right();
-        }
+        engine.move_piece(10);
         let far_right_col = engine.current_piece.col;
-        engine.move_piece_right();
+        engine.move_piece(1);
         assert_eq!(engine.current_piece.col, far_right_col);
-        engine.move_piece_right();
+        engine.move_piece(1);
         assert_eq!(engine.current_piece.col, far_right_col);
     }
 
@@ -1060,22 +1007,6 @@ mod tests {
 
         let hold_piece = engine.hold_piece.unwrap();
         assert_eq!(hold_piece, current_piece);
-
-        // Hold is only allowed once per piece.
-        let current_piece = engine.current_piece.piece.get_shape().clone();
-        engine.hold_piece();
-        assert_eq!(engine.hold_piece.unwrap(), hold_piece);
-        assert_eq!(engine.current_piece.piece.get_shape(), &current_piece);
-
-        engine.next_piece();
-
-        // Hold piece should be the same.
-        assert_eq!(engine.hold_piece.unwrap(), hold_piece);
-        // Since we are on the next piece hold should work again.
-        let current_piece = engine.current_piece.piece.get_shape().clone();
-        engine.hold_piece();
-        assert_eq!(engine.hold_piece.unwrap(), current_piece);
-        assert_eq!(engine.current_piece.piece.get_shape(), &hold_piece);
     }
 
     #[test]

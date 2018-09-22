@@ -167,6 +167,7 @@ fn handle_input(engine: &mut Engine, held_keys: &HashSet<Key>) {
             Key::Left => engine.input_move_left(),
             Key::Right => engine.input_move_right(),
             Key::Space => engine.input_hard_drop(),
+            Key::Down => engine.input_soft_drop(),
             Key::Z => engine.input_rotate_ccw(),
             Key::X => engine.input_rotate_cw(),
             Key::C => engine.input_hold(),

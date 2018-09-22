@@ -9,7 +9,6 @@ use rand::Rng;
 
 use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
 
-const GRAVITY: u8 = 20;
 const AUTO_REPEAT_DELAY: u32 = 12;
 const AUTO_REPEAT_RATE: u32 = 7;
 
@@ -23,6 +22,13 @@ pub struct Engine {
     ticks_since_drop: u8,
     current_tick_inputs: RefCell<HashSet<Action>>,
     current_inputs: HashMap<Action, u32>,
+    gravity: Gravity,
+    soft_drop_gravity: Gravity,
+}
+
+enum Gravity {
+    TicksPerRow(u8),
+    RowsPerTick(u8),
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
@@ -109,6 +115,8 @@ impl Engine {
             ticks_since_drop: 0,
             current_tick_inputs: RefCell::new(HashSet::new()),
             current_inputs,
+            gravity: Gravity::TicksPerRow(40),
+            soft_drop_gravity: Gravity::TicksPerRow(2),
         }
     }
 
@@ -244,6 +252,7 @@ impl Engine {
 
     /// Applies gravity, given the specified action set.
     fn apply_gravity(&mut self, actions: &HashSet<Action>) {
+        // Handle hard drop.
         if actions.contains(&Action::HardDrop) {
             // Do not apply hard drop if piece was held this turn.
             if !actions.contains(&Action::Hold) {
@@ -251,15 +260,29 @@ impl Engine {
                 self.lock_clear_next();
                 self.ticks_since_drop = 0;
             }
+            return;
         }
-        else if self.ticks_since_drop == GRAVITY {
-            if let DropResult::Collision = self.drop_one() {
-                self.lock_clear_next();
-            }
-            self.ticks_since_drop = 0;
-        }
-        else {
-            self.ticks_since_drop += 1;
+
+        let gravity = if actions.contains(&Action::SoftDrop) {
+            &self.soft_drop_gravity
+        } else {
+            &self.gravity
+        };
+
+        // Handle normal gravity.
+        match gravity {
+            Gravity::TicksPerRow(tpr) => {
+                if self.ticks_since_drop >= *tpr {
+                    if let DropResult::Collision = self.drop_one() {
+                        self.lock_clear_next();
+                    }
+                    self.ticks_since_drop = 0;
+                }
+                else {
+                    self.ticks_since_drop += 1;
+                }
+            },
+            _ => unimplemented!(),
         }
     }
 

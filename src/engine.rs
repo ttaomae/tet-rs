@@ -16,7 +16,7 @@ const AUTO_REPEAT_RATE: u32 = 7;
 pub struct Engine {
     playfield: Playfield,
     current_piece: CurrentPiece,
-    tetromino_generator: Box<TetrominoGenerator>,
+    tetromino_generator: Box<dyn TetrominoGenerator>,
     hold_piece: Option<Tetromino>,
     is_hold_available: bool,
     ticks_since_drop: u8,
@@ -24,6 +24,7 @@ pub struct Engine {
     current_inputs: HashMap<Action, u32>,
     gravity: Gravity,
     soft_drop_gravity: Gravity,
+    next_pieces: VecDeque<Tetromino>,
 }
 
 enum Gravity {
@@ -98,10 +99,13 @@ enum DropResult {
 }
 
 impl Engine {
-    /// Creates a new engine with an empty playfield.
-    pub fn new() -> Engine {
-        let tetromino_generator = Box::new(BagGenerator::new());
+    /// Creates a new engine with the specified tetromino generator.
+    fn with_tetromino_generator(tetromino_generator: Box<dyn TetrominoGenerator>) -> Engine {
         let current_piece = CurrentPiece::new(tetromino_generator.next());
+        let mut next_pieces = VecDeque::with_capacity(5);
+        for _ in 0..5 {
+            next_pieces.push_back(tetromino_generator.next());
+        }
         let mut current_inputs = HashMap::new();
         for action in ALL_ACTIONS.iter() {
             current_inputs.insert(*action, 0u32);
@@ -117,7 +121,13 @@ impl Engine {
             current_inputs,
             gravity: Gravity::TicksPerRow(40),
             soft_drop_gravity: Gravity::TicksPerRow(2),
+            next_pieces,
         }
+    }
+
+    /// Creates a new engine with default settings.
+    pub fn new() -> Engine {
+        Engine::with_tetromino_generator(Box::new(BagGenerator::new()))
     }
 
     pub fn get_playfield(&self) -> Playfield {
@@ -288,7 +298,12 @@ impl Engine {
 
     /// Sets the next current piece.
     fn next_piece(&mut self) {
-        self.current_piece = CurrentPiece::new(self.tetromino_generator.next());
+        self.current_piece = match self.next_pieces.pop_front() {
+            Option::Some(piece) => CurrentPiece::new(piece),
+            Option::None => panic!("This should never happen."),
+        };
+
+        self.next_pieces.push_back(self.tetromino_generator.next());
         self.is_hold_available = true;
     }
 
@@ -782,17 +797,13 @@ mod tests {
 
     #[test]
     fn test_engine_lock() {
-        let mut engine = Engine::new();
-        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::S);
-        engine.next_piece();
+        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::S));
 
         // Drop and lock three S tetrominos in spawn position, far left, and far right.
         // Check before and after locking that expected pieces are empty/occupied.
-
         // -##-##--##
         // ##-##--##-
         // 1234567890
-
 
         // Spawn position.
         engine.next_piece();
@@ -929,8 +940,7 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_collision() {
-        let mut engine = Engine::new();
-        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::I);
+        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::I));
         engine.next_piece();
 
         // Surround above and below to prevent rotation.
@@ -949,8 +959,7 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_wall_kick() {
-        let mut engine = Engine::new();
-        engine.tetromino_generator = Box::new(SingleTetrominoGenerator::T);
+        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::T));
         engine.next_piece();
 
         // Setup wall kick
@@ -1027,7 +1036,6 @@ mod tests {
     fn test_engine_hold_piece() {
         let mut engine = Engine::new();
 
-        //
         assert!(engine.hold_piece.is_none());
 
         let current_piece = engine.current_piece.piece.get_shape().clone();
@@ -1035,6 +1043,17 @@ mod tests {
 
         let hold_piece = engine.hold_piece.unwrap();
         assert_eq!(hold_piece, current_piece);
+    }
+
+    #[test]
+    fn test_engine_next_pieces() {
+        let mut engine = Engine::new();
+
+        for _ in 0..10 {
+            let next_piece = engine.next_pieces[0];
+            engine.next_piece();
+            assert_eq!(engine.current_piece.piece.get_shape(), &next_piece);
+        }
     }
 
     #[test]

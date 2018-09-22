@@ -67,7 +67,7 @@ impl CurrentPiece {
     fn new(shape: Tetromino) -> CurrentPiece {
         CurrentPiece {
             piece: Piece::new(shape),
-            row: 20,
+            row: 19,
             col: 4,
         }
     }
@@ -701,7 +701,7 @@ mod tests {
     fn assert_current_piece_new(piece: CurrentPiece, expected_shape: Tetromino) {
         assert_eq!(piece.piece.get_rotation(), &Rotation::Spawn);
         assert_eq!(piece.piece.get_shape(), &expected_shape);
-        assert_eq!(piece.row, 20);
+        assert_eq!(piece.row, 19);
         assert_eq!(piece.col, 4);
     }
 
@@ -725,7 +725,7 @@ mod tests {
         assert!(!engine.has_collision());
 
         // The spawn location should always overlap with this space.
-        engine.playfield.set(22, 5);
+        engine.playfield.set(21, 5);
         assert!(engine.has_collision());
     }
 
@@ -755,8 +755,9 @@ mod tests {
         let mut engine = Engine::new();
         let start_row = engine.current_piece.row;
 
-        // Bottom of tetromino should start on row 22, so we should be able to drop 21 rows.
-        for drop in 1..=21 {
+        // Bottom of tetromino should start just above visible playfield, so we should be able to
+        // drop the entire height of the playfield.
+        for drop in 1..=Playfield::VISIBLE_HEIGHT as i8 {
             engine.drop_one();
             assert_eq!(engine.current_piece.row, start_row - drop);
         }
@@ -764,35 +765,35 @@ mod tests {
         // The tetromino should be at the bottom of the playfield
         // so dropping again should have no effect.
         engine.drop_one();
-        assert_eq!(engine.current_piece.row, start_row - 21);
+        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
         engine.drop_one();
-        assert_eq!(engine.current_piece.row, start_row - 21);
+        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
 
         // Perform same test with drop().
         engine.next_piece();
         engine.drop(25);
-        assert_eq!(engine.current_piece.row, start_row - 21);
+        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
 
 
         // Add an obstacle, then test that piece cannot drop past it.
         engine.next_piece();
         engine.playfield.set(15, 5);
 
-        // We should be able to drop 6 rows before hitting the obstacle.
-        for drop in 1..=6 {
+        // We should be able to drop 5 rows before hitting the obstacle.
+        for drop in 1..=5 {
             engine.drop_one();
             assert_eq!(engine.current_piece.row, start_row - drop);
         }
         // Futher attempts to drop will fail since it would collide with the obstacle.
         engine.drop_one();
-        assert_eq!(engine.current_piece.row, start_row - 6);
+        assert_eq!(engine.current_piece.row, start_row - 5);
         engine.drop(4);
-        assert_eq!(engine.current_piece.row, start_row - 6);
+        assert_eq!(engine.current_piece.row, start_row - 5);
 
         // Perform same test with drop().
         engine.next_piece();
         engine.drop(10);
-        assert_eq!(engine.current_piece.row, start_row - 6);
+        assert_eq!(engine.current_piece.row, start_row - 5);
     }
 
     #[test]
@@ -807,7 +808,7 @@ mod tests {
 
         // Spawn position.
         engine.next_piece();
-        engine.drop(21);
+        engine.drop(Playfield::VISIBLE_HEIGHT);
         assert_eq!(engine.playfield.get(1, 4), Space::Empty);
         assert_eq!(engine.playfield.get(1, 5), Space::Empty);
         engine.lock();
@@ -817,7 +818,7 @@ mod tests {
         // Far left.
         engine.next_piece();
         engine.move_piece(-10);
-        engine.drop(21);
+        engine.drop(Playfield::VISIBLE_HEIGHT);
         assert_eq!(engine.playfield.get(1, 1), Space::Empty);
         assert_eq!(engine.playfield.get(1, 2), Space::Empty);
         engine.lock();
@@ -827,7 +828,7 @@ mod tests {
         // Far right.
         engine.next_piece();
         engine.move_piece(10);
-        engine.drop(21);
+        engine.drop(Playfield::VISIBLE_HEIGHT);
         assert_eq!(engine.playfield.get(1, 8), Space::Empty);
         assert_eq!(engine.playfield.get(1, 9), Space::Empty);
         engine.lock();
@@ -945,8 +946,8 @@ mod tests {
 
         // Surround above and below to prevent rotation.
         for col in 4..=7 {
-            engine.playfield.set(21, col);
-            engine.playfield.set(23, col);
+            engine.playfield.set(20, col);
+            engine.playfield.set(22, col);
         }
 
         // attempt rotate
@@ -970,7 +971,7 @@ mod tests {
         engine.playfield.set(2, 3);
         engine.rotate_piece_cw();
         engine.move_piece(-10);
-        engine.drop(21);
+        engine.drop(Playfield::VISIBLE_HEIGHT);
 
         // Perform wall kick and lock into place.
         // ----------

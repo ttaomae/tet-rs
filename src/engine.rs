@@ -11,6 +11,7 @@ use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
 
 const AUTO_REPEAT_DELAY: u32 = 12;
 const AUTO_REPEAT_RATE: u32 = 7;
+const LINE_CLEAR_DELAY: u32 = 30;
 
 /// The main game engine.
 pub struct Engine {
@@ -25,6 +26,7 @@ pub struct Engine {
     gravity: Gravity,
     soft_drop_gravity: Gravity,
     next_pieces: VecDeque<Tetromino>,
+    line_clear_progress: u32,
 }
 
 enum Gravity {
@@ -122,6 +124,7 @@ impl Engine {
             gravity: Gravity::TicksPerRow(40),
             soft_drop_gravity: Gravity::TicksPerRow(2),
             next_pieces,
+            line_clear_progress: 0,
         }
     }
 
@@ -144,11 +147,17 @@ impl Engine {
     // Actions performed by the engine.
 
     pub fn tick(&mut self) {
+        self.apply_line_clear();
+
+        // Always process input so that hold durations are accurate.
         let actions = self.get_actions();
-        if !self.apply_hold(&actions) {
-            self.apply_piece_move(&actions);
-            self.apply_piece_rotation(&actions);
-            self.apply_gravity(&actions);
+        // Only perform actions if line clear is not in progress.
+        if self.line_clear_progress == 0 {
+            if !self.apply_hold(&actions) {
+                self.apply_piece_move(&actions);
+                self.apply_piece_rotation(&actions);
+                self.apply_gravity(&actions);
+            }
         }
     }
 
@@ -214,6 +223,20 @@ impl Engine {
         current_turn_actions
     }
 
+    /// Updates line clear progress and clears lines if necessary.
+    fn apply_line_clear(&mut self) {
+        // If line clear is in progress, update counter.
+        if self.line_clear_progress > 0 {
+            self.line_clear_progress += 1;
+        }
+        // Reset counter if line clear is complete.
+        if self.line_clear_progress == LINE_CLEAR_DELAY {
+            self.clear_rows();
+            self.next_piece();
+            self.line_clear_progress = 0;
+        }
+    }
+
     /// Attempts to hold the current piece if it is one of the specified actions.
     /// Returns whether or not the the hold was successful.
     fn apply_hold(&mut self, actions: &HashSet<Action>) -> bool {
@@ -267,7 +290,10 @@ impl Engine {
             // Do not apply hard drop if piece was held this turn.
             if !actions.contains(&Action::Hold) {
                 self.drop(Playfield::TOTAL_HEIGHT);
-                self.lock_clear_next();
+                self.lock();
+                if !self.initiate_line_clear() {
+                    self.next_piece();
+                }
                 self.ticks_since_drop = 0;
             }
             return;
@@ -284,7 +310,10 @@ impl Engine {
             Gravity::TicksPerRow(tpr) => {
                 if self.ticks_since_drop >= *tpr {
                     if let DropResult::Collision = self.drop_one() {
-                        self.lock_clear_next();
+                        self.lock();
+                        if !self.initiate_line_clear() {
+                            self.next_piece();
+                        }
                     }
                     self.ticks_since_drop = 0;
                 }
@@ -357,13 +386,6 @@ impl Engine {
         DropResult::Success
     }
 
-    /// Locks the current piece into place, clears rows if necessary, then generates next the piece.
-    fn lock_clear_next(&mut self) {
-        self.lock();
-        self.clear_rows();
-        self.next_piece();
-    }
-
     /// Locks the current piece into it's current location.
     fn lock(&mut self) {
         let bounding_box = self.current_piece.piece.get_bounding_box();
@@ -379,6 +401,32 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Returns whether or not at least one row is full.
+    fn contains_full_rows(&self) -> bool {
+        for row in 1..=Playfield::TOTAL_HEIGHT {
+            let mut row_full = true;
+            for col in 1..=Playfield::WIDTH {
+                if self.playfield.get(row, col) == Space::Empty {
+                    row_full = false;
+                    break;
+                }
+            }
+            if row_full {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Initiates a line clear and returns whether or not a line clear was initiated.
+    fn initiate_line_clear(&mut self) -> bool {
+        if self.contains_full_rows() {
+            self.line_clear_progress += 1;
+            return true
+        }
+        false
     }
 
     /// Clears any rows that are full and drops blocks down.

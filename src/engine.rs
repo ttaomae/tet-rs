@@ -11,6 +11,7 @@ use super::core::{Piece, Playfield, Rotation, Space, Tetromino};
 
 const AUTO_REPEAT_DELAY: u32 = 12;
 const AUTO_REPEAT_RATE: u32 = 7;
+const LOCK_DELAY: u32 = 30;
 const LINE_CLEAR_DELAY: u32 = 30;
 
 /// The main game engine.
@@ -20,13 +21,19 @@ pub struct Engine {
     tetromino_generator: Box<dyn TetrominoGenerator>,
     hold_piece: Option<Tetromino>,
     is_hold_available: bool,
-    ticks_since_drop: u8,
     current_tick_inputs: RefCell<HashSet<Action>>,
     current_inputs: HashMap<Action, u32>,
     gravity: Gravity,
     soft_drop_gravity: Gravity,
     next_pieces: VecDeque<Tetromino>,
-    line_clear_progress: u32,
+    state: State,
+}
+
+enum State {
+    Falling(u32),
+    Lock(u32),
+    LineClear(u32),
+    TopOut,
 }
 
 enum Gravity {
@@ -118,13 +125,12 @@ impl Engine {
             tetromino_generator,
             hold_piece: Option::None,
             is_hold_available: true,
-            ticks_since_drop: 0,
             current_tick_inputs: RefCell::new(HashSet::new()),
             current_inputs,
             gravity: Gravity::TicksPerRow(40),
             soft_drop_gravity: Gravity::TicksPerRow(2),
             next_pieces,
-            line_clear_progress: 0,
+            state: State::Falling(0),
         }
     }
 
@@ -147,22 +153,19 @@ impl Engine {
     // Actions performed by the engine.
 
     pub fn tick(&mut self) {
-        self.apply_line_clear();
-
         // Always process input so that hold durations are accurate.
-        let actions = self.get_actions();
-        // Only perform actions if line clear is not in progress.
-        if self.line_clear_progress == 0 {
-            if !self.apply_hold(&actions) {
-                self.apply_piece_move(&actions);
-                self.apply_piece_rotation(&actions);
-                self.apply_gravity(&actions);
-            }
+        let actions = self.process_input();
+
+        match self.state {
+            State::Falling(_) => self.tick_falling(&actions),
+            State::Lock(_) => self.tick_lock(&actions),
+            State::LineClear(_) => self.tick_line_clear(),
+            _ => (),
         }
     }
 
     /// Processes input and returns a list of actions to perform on this tick.
-    fn get_actions(&mut self) -> HashSet<Action> {
+    fn process_input(&mut self) -> HashSet<Action> {
         // Clear current_tick_inputs and update current_inputs.
         for action in ALL_ACTIONS.iter() {
             if self.current_tick_inputs.borrow_mut().remove(&action) {
@@ -223,18 +226,101 @@ impl Engine {
         current_turn_actions
     }
 
-    /// Updates line clear progress and clears lines if necessary.
-    fn apply_line_clear(&mut self) {
-        // If line clear is in progress, update counter.
-        if self.line_clear_progress > 0 {
-            self.line_clear_progress += 1;
+    fn tick_falling(&mut self, actions: &HashSet<Action>) {
+        if let State::Falling(n) = self.state {
+            let applied_actions = self.apply_actions(&actions);
+
+            if applied_actions.contains(&Action::HardDrop) {
+                self.apply_lock();
+            }
+            else if applied_actions.contains(&Action::Hold) {
+                self.state = State::Falling(1);
+            }
+            else {
+                let dropped = self.apply_gravity(&actions);
+                if self.is_in_lock_position() {
+                    self.state = State::Lock(1);
+                }
+                else if dropped {
+                    self.state = State::Falling(1);
+                }
+                else {
+                    self.state = State::Falling(n + 1);
+                }
+            }
         }
-        // Reset counter if line clear is complete.
-        if self.line_clear_progress == LINE_CLEAR_DELAY {
-            self.clear_rows();
-            self.next_piece();
-            self.line_clear_progress = 0;
+        else {
+            panic!("This method should only be called while state is State::Falling.");
         }
+    }
+
+    fn tick_lock(&mut self, actions: &HashSet<Action>) {
+        match self.state {
+            State::Lock(LOCK_DELAY) => {
+                self.apply_lock();
+            }
+            State::Lock(n) => {
+                let applied_actions = self.apply_actions(&actions);
+
+                if applied_actions.contains(&Action::Hold) {
+                    self.state = State::Falling(1);
+                }
+                else if applied_actions.contains(&Action::HardDrop) {
+                    self.apply_lock();
+                }
+                else if applied_actions.contains(&Action::MoveLeft)
+                    || applied_actions.contains(&Action::MoveRight)
+                    || applied_actions.contains(&Action::RotateClockwise)
+                    || applied_actions.contains(&Action::RotateCounterClockwise)
+                {
+                    if self.is_in_lock_position() {
+                        self.state = State::Lock(1);
+                    }
+                    else {
+                        self.state = State::Falling(1);
+                    }
+                }
+                else {
+                    self.state = State::Lock(n + 1);
+                }
+            },
+            _ => panic!("This method should only be called while state is State::Lock."),
+        }
+    }
+
+    fn tick_line_clear(&mut self) {
+        match self.state {
+            State::LineClear(LINE_CLEAR_DELAY) => {
+                self.clear_rows();
+                self.next_piece();
+                self.state = State::Falling(1);
+            },
+            State::LineClear(n) => {
+                self.state = State::LineClear(n + 1);
+            },
+            _ => panic!("This method should only be called while state is State::LineClear."),
+        }
+    }
+
+    fn apply_actions(&mut self, actions: &HashSet<Action>) -> HashSet<Action> {
+        let mut applied_actions = HashSet::new();
+
+        if self.apply_hold(&actions) {
+            applied_actions.insert(Action::Hold);
+        }
+        else {
+            if let Option::Some(action) = self.apply_piece_move(&actions) {
+                applied_actions.insert(action);
+            }
+            if let Option::Some(action) = self.apply_piece_rotation(&actions) {
+                applied_actions.insert(action);
+            }
+            if let Option::Some(action) = self.apply_hard_drop(&actions) {
+                applied_actions.insert(action);
+            }
+        }
+
+        applied_actions
     }
 
     /// Attempts to hold the current piece if it is one of the specified actions.
@@ -265,40 +351,45 @@ impl Engine {
 
     /// Applies move if contained in the specified action set.
     /// Left moves are given priority over left moves.
-    fn apply_piece_move(&mut self, actions: &HashSet<Action>) {
+    fn apply_piece_move(&mut self, actions: &HashSet<Action>) -> Option<Action> {
         if actions.contains(&Action::MoveLeft) {
             self.move_piece(-1);
+            return Option::Some(Action::MoveLeft);
         } else if actions.contains(&Action::MoveRight) {
             self.move_piece(1);
+            return Option::Some(Action::MoveRight);
         }
+
+        Option::None
     }
 
     /// Applies rotation if contained in the specified action set.
     /// Clockwise rotation is given priority over counter-clockwise rotations.
-    fn apply_piece_rotation(&mut self, actions: &HashSet<Action>) {
-            if actions.contains(&Action::RotateClockwise) {
-                self.rotate_piece_cw();
-            } else if actions.contains(&Action::RotateCounterClockwise) {
-                self.rotate_piece_ccw();
-            }
+    fn apply_piece_rotation(&mut self, actions: &HashSet<Action>) -> Option<Action> {
+        if actions.contains(&Action::RotateClockwise) {
+            self.rotate_piece_cw();
+            return Option::Some(Action::RotateClockwise);
+        } else if actions.contains(&Action::RotateCounterClockwise) {
+            self.rotate_piece_ccw();
+            return Option::Some(Action::RotateCounterClockwise);
+        }
+
+        return Option::None
+    }
+
+    fn apply_hard_drop(&mut self, actions: &HashSet<Action>) -> Option<Action> {
+        if actions.contains(&Action::HardDrop) {
+            self.drop(Playfield::TOTAL_HEIGHT);
+            // self.lock();
+
+            return Option::Some(Action::HardDrop);
+        }
+
+        Option::None
     }
 
     /// Applies gravity, given the specified action set.
-    fn apply_gravity(&mut self, actions: &HashSet<Action>) {
-        // Handle hard drop.
-        if actions.contains(&Action::HardDrop) {
-            // Do not apply hard drop if piece was held this turn.
-            if !actions.contains(&Action::Hold) {
-                self.drop(Playfield::TOTAL_HEIGHT);
-                self.lock();
-                if !self.initiate_line_clear() {
-                    self.next_piece();
-                }
-                self.ticks_since_drop = 0;
-            }
-            return;
-        }
-
+    fn apply_gravity(&mut self, actions: &HashSet<Action>) -> bool {
         let gravity = if actions.contains(&Action::SoftDrop) {
             &self.soft_drop_gravity
         } else {
@@ -306,22 +397,29 @@ impl Engine {
         };
 
         // Handle normal gravity.
-        match gravity {
-            Gravity::TicksPerRow(tpr) => {
-                if self.ticks_since_drop >= *tpr {
+        match (&self.state, gravity) {
+            (State::Falling(n), Gravity::TicksPerRow(tpr)) => {
+                if *n >= *tpr as u32 {
                     if let DropResult::Collision = self.drop_one() {
-                        self.lock();
-                        if !self.initiate_line_clear() {
-                            self.next_piece();
-                        }
+                        panic!("Could not apply gravity in current state.");
                     }
-                    self.ticks_since_drop = 0;
-                }
-                else {
-                    self.ticks_since_drop += 1;
+                    return true;
                 }
             },
             _ => unimplemented!(),
+        };
+
+        false
+    }
+
+    fn apply_lock(&mut self) {
+        self.lock();
+        if self.contains_full_rows() {
+            self.state = State::LineClear(1);
+        }
+        else {
+            self.next_piece();
+            self.state = State::Falling(1);
         }
     }
 
@@ -386,6 +484,14 @@ impl Engine {
         DropResult::Success
     }
 
+    /// Returns whether or not the current piece is in a position where it can be locked into place.
+    fn is_in_lock_position(&self) -> bool {
+        let mut piece = self.current_piece.clone();
+        piece.row -= 1;
+
+        self.has_collision_with_piece(piece)
+    }
+
     /// Locks the current piece into it's current location.
     fn lock(&mut self) {
         let bounding_box = self.current_piece.piece.get_bounding_box();
@@ -416,15 +522,6 @@ impl Engine {
             if row_full {
                 return true;
             }
-        }
-        false
-    }
-
-    /// Initiates a line clear and returns whether or not a line clear was initiated.
-    fn initiate_line_clear(&mut self) -> bool {
-        if self.contains_full_rows() {
-            self.line_clear_progress += 1;
-            return true
         }
         false
     }

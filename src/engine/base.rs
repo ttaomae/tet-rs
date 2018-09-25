@@ -15,7 +15,7 @@ const LOCK_DELAY: u32 = 30;
 const LINE_CLEAR_DELAY: u32 = 30;
 
 /// The main game engine.
-pub struct Engine {
+pub struct BaseEngine {
     playfield: Playfield,
     current_piece: CurrentPiece,
     tetromino_generator: Box<dyn TetrominoGenerator>,
@@ -109,9 +109,9 @@ enum DropResult {
     Collision,
 }
 
-impl Engine {
+impl BaseEngine {
     /// Creates a new engine with the specified tetromino generator.
-    fn with_tetromino_generator(tetromino_generator: Box<dyn TetrominoGenerator>) -> Engine {
+    fn with_tetromino_generator(tetromino_generator: Box<dyn TetrominoGenerator>) -> BaseEngine {
         let current_piece = CurrentPiece::new(tetromino_generator.next());
         let mut next_pieces = VecDeque::with_capacity(5);
         for _ in 0..5 {
@@ -121,7 +121,7 @@ impl Engine {
         for action in ALL_ACTIONS.iter() {
             current_inputs.insert(*action, 0u32);
         }
-        Engine {
+        BaseEngine {
             playfield: Playfield::new(),
             current_piece,
             tetromino_generator,
@@ -137,8 +137,8 @@ impl Engine {
     }
 
     /// Creates a new engine with default settings.
-    pub fn new() -> Engine {
-        Engine::with_tetromino_generator(Box::new(BagGenerator::new()))
+    pub fn new() -> BaseEngine {
+        BaseEngine::with_tetromino_generator(Box::new(BagGenerator::new()))
     }
 
     pub fn get_playfield(&self) -> Playfield {
@@ -781,7 +781,7 @@ impl Distribution<Tetromino> for Standard {
     }
 }
 
-impl fmt::Debug for Engine {
+impl fmt::Debug for BaseEngine {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut playfield = self.playfield;
 
@@ -804,7 +804,7 @@ impl fmt::Debug for Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::*;
+    use crate::engine::core::*;
     use std::collections::HashSet;
 
     enum SingleTetrominoGenerator {
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn test_engine_new() {
-        let engine = Engine::new();
+        let engine = BaseEngine::new();
 
         // Playfield should start empty.
         for row in 1..=Playfield::TOTAL_HEIGHT {
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn test_engine_next_piece() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         for _ in 0..10 {
             let mut piece = engine.current_piece.piece;
@@ -881,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_engine_has_collision() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
         assert!(!engine.has_collision());
 
         // The spawn location should always overlap with this space.
@@ -891,7 +891,7 @@ mod tests {
 
     #[test]
     fn test_engine_drop() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
         let start_row = engine.current_piece.row;
 
         engine.drop_one();
@@ -912,7 +912,7 @@ mod tests {
 
     #[test]
     fn test_engine_drop_collision() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
         let start_row = engine.current_piece.row;
 
         // Bottom of tetromino should start just above visible playfield, so we should be able to
@@ -958,7 +958,7 @@ mod tests {
 
     #[test]
     fn test_engine_lock() {
-        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::S));
+        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::S));
 
         // Drop and lock three S tetrominos in spawn position, far left, and far right.
         // Check before and after locking that expected pieces are empty/occupied.
@@ -998,7 +998,7 @@ mod tests {
 
     #[test]
     fn test_clear_rows() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         // Fill first, second, and fourth row.
         for col in 1..=Playfield::WIDTH {
@@ -1056,7 +1056,7 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         // Rotate clockwise.
         assert_eq!(engine.current_piece.piece.get_rotation(), &Rotation::Spawn);
@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_collision() {
-        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::I));
+        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::I));
         engine.next_piece();
 
         // Surround above and below to prevent rotation.
@@ -1120,7 +1120,7 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_wall_kick() {
-        let mut engine = Engine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::T));
+        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::T));
         engine.next_piece();
 
         // Setup wall kick
@@ -1149,7 +1149,7 @@ mod tests {
 
     #[test]
     fn test_engine_move_piece() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         // Test move left.
         let start_col = engine.current_piece.col;
@@ -1172,7 +1172,7 @@ mod tests {
 
     #[test]
     fn test_engine_move_piece_collision() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         // Spawn new piece then move to far left.
         engine.move_piece(-10);
@@ -1195,7 +1195,7 @@ mod tests {
 
     #[test]
     fn test_engine_hold_piece() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         assert!(engine.hold_piece.is_none());
 
@@ -1208,7 +1208,7 @@ mod tests {
 
     #[test]
     fn test_engine_next_pieces() {
-        let mut engine = Engine::new();
+        let mut engine = BaseEngine::new();
 
         for _ in 0..10 {
             let next_piece = engine.next_pieces[0];

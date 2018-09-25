@@ -17,7 +17,7 @@ use piston_window::PistonWindow;
 
 use self::{
     core::{Playfield, Space},
-    engine::Engine,
+    engine::{Engine, State},
 };
 
 const SPACE_SIZE: u32 = 20;
@@ -47,7 +47,9 @@ fn main() {
                 Loop::Update(_) =>
                 {
                     handle_input(&mut engine, &pressed_keys);
-                    engine.tick();
+                    if let State::TopOut = engine.tick() {
+                        break;
+                    }
                 }
                 _ => window.event(&event),
             },

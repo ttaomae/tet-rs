@@ -29,7 +29,9 @@ pub struct Engine {
     state: State,
 }
 
-enum State {
+#[derive(Clone, Copy)]
+pub enum State {
+    Spawn,
     Falling(u32),
     Lock(u32),
     LineClear(u32),
@@ -152,16 +154,19 @@ impl Engine {
      * * * * * * * * * */
     // Actions performed by the engine.
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> State {
         // Always process input so that hold durations are accurate.
         let actions = self.process_input();
 
         match self.state {
+            State::Spawn => self.tick_spawn(),
             State::Falling(_) => self.tick_falling(&actions),
             State::Lock(_) => self.tick_lock(&actions),
             State::LineClear(_) => self.tick_line_clear(),
-            _ => (),
+            State::TopOut => (),
         }
+
+        self.state.clone()
     }
 
     /// Processes input and returns a list of actions to perform on this tick.
@@ -224,6 +229,15 @@ impl Engine {
         }
 
         current_turn_actions
+    }
+
+    fn tick_spawn(&mut self) {
+        self.state = if self.has_collision() {
+            State::TopOut
+        }
+        else {
+            State::Falling(1)
+        }
     }
 
     fn tick_falling(&mut self, actions: &HashSet<Action>) {
@@ -293,7 +307,7 @@ impl Engine {
             State::LineClear(LINE_CLEAR_DELAY) => {
                 self.clear_rows();
                 self.next_piece();
-                self.state = State::Falling(1);
+                self.state = State::Spawn;
             },
             State::LineClear(n) => {
                 self.state = State::LineClear(n + 1);
@@ -400,10 +414,10 @@ impl Engine {
         match (&self.state, gravity) {
             (State::Falling(n), Gravity::TicksPerRow(tpr)) => {
                 if *n >= *tpr as u32 {
-                    if let DropResult::Collision = self.drop_one() {
-                        panic!("Could not apply gravity in current state.");
+                    if let DropResult::Success = self.drop_one() {
+                        return true;
                     }
-                    return true;
+                    return false;
                 }
             },
             _ => unimplemented!(),
@@ -415,11 +429,12 @@ impl Engine {
     fn apply_lock(&mut self) {
         self.lock();
         if self.contains_full_rows() {
+            self.next_piece();
             self.state = State::LineClear(1);
         }
         else {
             self.next_piece();
-            self.state = State::Falling(1);
+            self.state = State::Spawn;
         }
     }
 

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt;
+use std::rc::Rc;
 
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
@@ -27,6 +28,8 @@ pub struct BaseEngine {
     soft_drop_gravity: Gravity,
     next_pieces: VecDeque<Tetromino>,
     state: State,
+    current_t_spin: TSpinInternal,
+    observers: Vec<Rc<dyn BaseEngineObserver>>,
 }
 
 #[derive(Clone, Copy)]
@@ -104,9 +107,36 @@ impl CurrentPiece {
     }
 }
 
-enum DropResult {
-    Success,
-    Collision,
+#[derive(PartialEq, Eq)]
+enum TSpinInternal {
+    None,
+    Regular,
+    Mini,
+    PointFive,
+}
+
+#[derive(Copy, Clone)]
+pub enum TSpin {
+    None,
+    Regular,
+    Mini,
+}
+
+impl From<&TSpinInternal> for TSpin {
+    fn from(t_spin_internal: &TSpinInternal) -> TSpin {
+        match t_spin_internal {
+            TSpinInternal::None => TSpin::None,
+            TSpinInternal::Regular | TSpinInternal::PointFive => TSpin::Regular,
+            TSpinInternal::Mini => TSpin::Mini,
+        }
+    }
+}
+
+pub trait BaseEngineObserver {
+    fn on_lock(&self, t_spin: TSpin) {}
+    fn on_soft_drop(&self, n_rows: u8) {}
+    fn on_hard_drop(&self, n_rows: u8) {}
+    fn on_line_clear(&self, n_rows: u8) {}
 }
 
 impl BaseEngine {
@@ -133,6 +163,8 @@ impl BaseEngine {
             soft_drop_gravity: Gravity::TicksPerRow(2),
             next_pieces,
             state: State::Falling(0),
+            current_t_spin: TSpinInternal::None,
+            observers: vec![],
         }
     }
 
@@ -147,6 +179,16 @@ impl BaseEngine {
 
     pub fn get_current_piece(&self) -> CurrentPiece {
         self.current_piece
+    }
+
+    pub fn add_observer(&mut self, observer: Rc<dyn BaseEngineObserver>) {
+        self.observers.push(observer);
+    }
+
+    fn notify_observers<F>(&self, notify: F) where F: Fn(&Rc<dyn BaseEngineObserver>){
+        for observer in self.observers.iter() {
+            notify(observer);
+        }
     }
 
     /* * * * * * * * * *
@@ -237,7 +279,9 @@ impl BaseEngine {
         }
         else {
             State::Falling(1)
-        }
+        };
+
+        self.current_t_spin = TSpinInternal::None;
     }
 
     fn tick_falling(&mut self, actions: &HashSet<Action>) {
@@ -305,7 +349,8 @@ impl BaseEngine {
     fn tick_line_clear(&mut self) {
         match self.state {
             State::LineClear(LINE_CLEAR_DELAY) => {
-                self.clear_rows();
+                let n_rows = self.clear_rows();
+                self.notify_observers(|obs| obs.on_line_clear(n_rows));
                 self.next_piece();
                 self.state = State::Spawn;
             },
@@ -364,14 +409,18 @@ impl BaseEngine {
     }
 
     /// Applies move if contained in the specified action set.
-    /// Left moves are given priority over left moves.
+    /// Left moves are given priority over right moves.
     fn apply_piece_move(&mut self, actions: &HashSet<Action>) -> Option<Action> {
         if actions.contains(&Action::MoveLeft) {
-            self.move_piece(-1);
-            return Option::Some(Action::MoveLeft);
+            if self.move_piece(-1) == 1 {
+                self.current_t_spin = TSpinInternal::None;
+                return Option::Some(Action::MoveLeft)
+            }
         } else if actions.contains(&Action::MoveRight) {
-            self.move_piece(1);
-            return Option::Some(Action::MoveRight);
+            if self.move_piece(1) == 1 {
+                self.current_t_spin = TSpinInternal::None;
+                return Option::Some(Action::MoveRight);
+            }
         }
 
         Option::None
@@ -381,11 +430,13 @@ impl BaseEngine {
     /// Clockwise rotation is given priority over counter-clockwise rotations.
     fn apply_piece_rotation(&mut self, actions: &HashSet<Action>) -> Option<Action> {
         if actions.contains(&Action::RotateClockwise) {
-            self.rotate_piece_cw();
-            return Option::Some(Action::RotateClockwise);
+            if self.rotate_piece_cw() {
+                return Option::Some(Action::RotateClockwise);
+            }
         } else if actions.contains(&Action::RotateCounterClockwise) {
-            self.rotate_piece_ccw();
-            return Option::Some(Action::RotateCounterClockwise);
+            if self.rotate_piece_ccw() {
+                return Option::Some(Action::RotateCounterClockwise);
+            }
         }
 
         return Option::None
@@ -393,9 +444,12 @@ impl BaseEngine {
 
     fn apply_hard_drop(&mut self, actions: &HashSet<Action>) -> Option<Action> {
         if actions.contains(&Action::HardDrop) {
-            self.drop(Playfield::TOTAL_HEIGHT);
-            // self.lock();
+            let rows = self.drop(Playfield::TOTAL_HEIGHT);
+            if rows > 0 {
+                self.current_t_spin = TSpinInternal::None;
+            }
 
+            self.notify_observers(|obs| obs.on_hard_drop(rows));
             return Option::Some(Action::HardDrop);
         }
 
@@ -404,7 +458,8 @@ impl BaseEngine {
 
     /// Applies gravity, given the specified action set.
     fn apply_gravity(&mut self, actions: &HashSet<Action>) -> bool {
-        let gravity = if actions.contains(&Action::SoftDrop) {
+        let soft_drop = actions.contains(&Action::SoftDrop);
+        let gravity = if soft_drop {
             &self.soft_drop_gravity
         } else {
             &self.gravity
@@ -414,7 +469,10 @@ impl BaseEngine {
         match (&self.state, gravity) {
             (State::Falling(n), Gravity::TicksPerRow(tpr)) => {
                 if *n >= *tpr as u32 {
-                    if let DropResult::Success = self.drop_one() {
+                    if self.drop_one() == 1 {
+                        if soft_drop {
+                            self.notify_observers(|obs| obs.on_soft_drop(1));
+                        }
                         return true;
                     }
                     return false;
@@ -428,6 +486,9 @@ impl BaseEngine {
 
     fn apply_lock(&mut self) {
         self.lock();
+        let t_spin = TSpin::from(&self.current_t_spin);
+        self.notify_observers(|obs| obs.on_lock(TSpin::from(&self.current_t_spin)));
+        self.current_t_spin = TSpinInternal::None;
         if self.contains_full_rows() {
             self.next_piece();
             self.state = State::LineClear(1);
@@ -482,21 +543,21 @@ impl BaseEngine {
     }
 
     /// Drops the current piece by one row if it does not result in a collision.
-    fn drop_one(&mut self) -> DropResult {
+    fn drop_one(&mut self) -> u8 {
         self.drop(1)
     }
 
     /// Drops the current piece by up to the specified number of row, or until there is a collision.
-    fn drop(&mut self, n_rows: u8) -> DropResult {
-        for _ in 0..n_rows {
+    fn drop(&mut self, n_rows: u8) -> u8 {
+        for row in 0..n_rows {
             self.current_piece.row -= 1;
             if self.has_collision() {
                 self.current_piece.row += 1;
-                return DropResult::Collision;
+                return row;
             }
         }
 
-        DropResult::Success
+        n_rows
     }
 
     /// Returns whether or not the current piece is in a position where it can be locked into place.
@@ -542,7 +603,7 @@ impl BaseEngine {
     }
 
     /// Clears any rows that are full and drops blocks down.
-    fn clear_rows(&mut self) {
+    fn clear_rows(&mut self) -> u8 {
         // Construct a list of all row that will NOT be cleared.
         let mut non_full_rows = Vec::with_capacity(Playfield::TOTAL_HEIGHT as usize);
         for row in 1..=Playfield::TOTAL_HEIGHT {
@@ -557,16 +618,16 @@ impl BaseEngine {
 
         // Don't do anything if no rows are full
         if non_full_rows.len() == Playfield::TOTAL_HEIGHT as usize {
-            return;
+            return 0;
         }
 
         // Copy non-full rows to next available row. Since full rows are not in the list, this has
         // the effect of overwriting the full rows.
         let mut current_row = 1;
-        for row in non_full_rows {
+        for row in non_full_rows.iter() {
             // Copy non-full row to current row.
             for col in 1..=Playfield::WIDTH {
-                match self.playfield.get(row, col) {
+                match self.playfield.get(*row, col) {
                     Space::Empty => self.playfield.clear(current_row, col),
                     Space::Block => self.playfield.set(current_row, col),
                 };
@@ -580,30 +641,35 @@ impl BaseEngine {
                 self.playfield.clear(row, col);
             }
         }
+
+        Playfield::TOTAL_HEIGHT - non_full_rows.len() as u8
     }
 
     /// Moves the current piece horizontally by up to the specified amount.
-    fn move_piece(&mut self, col_offset: i8) {
-        for _ in 0..col_offset.abs() {
+    fn move_piece(&mut self, col_offset: i8) -> u8 {
+        for col in 0..col_offset.abs() {
             self.current_piece.col += col_offset.signum();
             if self.has_collision() {
                 self.current_piece.col -= col_offset.signum();
+                return col as u8;
             }
         }
+        col_offset as u8
     }
 
     /// Rotates the current piece clockwise.
-    fn rotate_piece_cw(&mut self) {
-        self.rotate_piece(|p| p.rotate_cw());
+    fn rotate_piece_cw(&mut self) -> bool {
+        self.rotate_piece(|p| p.rotate_cw())
     }
 
     /// Rotates the current piece counter-clockwise.
-    fn rotate_piece_ccw(&mut self) {
-        self.rotate_piece(|p| p.rotate_ccw());
+    fn rotate_piece_ccw(&mut self) -> bool {
+        self.rotate_piece(|p| p.rotate_ccw())
     }
 
     /// Rotates the current piece and applies wall kick, if possible. Otherwise, does nothing.
-    fn rotate_piece<F>(&mut self, mut rotate: F) where F: FnMut(&mut CurrentPiece)
+    fn rotate_piece<F>(&mut self, mut rotate: F) -> bool
+        where F: FnMut(&mut CurrentPiece)
     {
         let initial = self.current_piece.piece.get_rotation().clone();
         let mut updated_piece = self.current_piece.clone();
@@ -616,7 +682,11 @@ impl BaseEngine {
             self.current_piece.col += col_offset;
             self.current_piece.row += row_offset;
             rotate(&mut self.current_piece);
+            self.current_t_spin = self.detect_t_spin();
+            return true;
         }
+
+        false
     }
 
     /// Checks whether or not the specified piece would collide with the playfield.
@@ -624,7 +694,7 @@ impl BaseEngine {
     /// Returns the offset which resulted in no collision as (col_offset, row_offset)
     /// or `Option::None` if the rotation is not possible.
     fn check_rotation(
-        &self,
+        &mut self,
         piece: &mut CurrentPiece,
         initial: Rotation,
         rotated: Rotation,
@@ -668,12 +738,16 @@ impl BaseEngine {
         };
 
         // Check each offset.
-        for offset in wall_kick_offsets {
+        for (rotation_point, offset) in wall_kick_offsets.iter().enumerate() {
             piece.col += offset.0;
             piece.row += offset.1;
             // Return if there was no collision.
             if !self.has_collision_with_piece(*piece) {
-                return Option::Some(offset);
+                // enumerate() uses zero based index. Rotation point use one-based index.
+                if self.current_piece.piece.get_shape() == &Tetromino::T &&  rotation_point == 4 {
+                    self.current_t_spin = TSpinInternal::PointFive;
+                }
+                return Option::Some(*offset);
             }
             // Reset position for next test.
             piece.col -= offset.0;
@@ -682,6 +756,58 @@ impl BaseEngine {
 
         // Could not find a valid wall kick.
         Option::None
+    }
+
+    // Assumes that a rotation has just occurred.
+    fn detect_t_spin(&self) -> TSpinInternal {
+        if self.current_piece.piece.get_shape() != &Tetromino::T {
+            return TSpinInternal::None;
+        }
+
+        // Any further rotation after using rotation point 5 is still considered a T-spin.
+        if self.current_t_spin == TSpinInternal::PointFive {
+            return TSpinInternal::PointFive;
+        }
+
+        // Below are the "corners" of the T tetromino labeled A, B, C, and D for each rotation.
+        // If A and B and (C or D) are occupied it is a regular T-spin.
+        // If C and D and (A or B) are occupied it is a mini T-spin.
+        //  3  A # B -   C # A -   D - C -   B # D -
+        //  2  # # # -   - # # -   # # # -   # # - -
+        //  1  C - D -   D # B -   B # A -   A # C -
+        //  0  - - - -   - - - -   - - - -   - - - -
+        //     0 1 2 3   0 1 2 3   0 1 2 3   0 1 2 3
+
+        // Row/Column offsets for each corner.
+        let (a_offset, b_offset, c_offset, d_offset) = match self.current_piece.piece.get_rotation() {
+            Rotation::Spawn => ((3, 0), (3, 2), (1, 0), (1, 2)),
+            Rotation::Clockwise => ((3, 2), (1, 2), (3, 0), (1, 0)),
+            Rotation::OneEighty => ((1, 2), (1, 0), (3, 2), (3, 0)),
+            Rotation::CounterClockwise => ((1, 0), (3, 0), (1, 2), (3, 2)),
+        };
+
+        fn is_occupied(engine: &BaseEngine, row_offset: i8, col_offset: i8) -> bool {
+            let current_row = engine.current_piece.row;
+            let current_col = engine.current_piece.col;
+            let row = current_row + row_offset;
+            let col = current_col + col_offset;
+            row < 1 || row > Playfield::TOTAL_HEIGHT as i8 || col < 1 || col > Playfield::WIDTH as i8
+                || engine.playfield.get(row as u8, col as u8) == Space::Block
+        }
+
+        let a = is_occupied(self, a_offset.0, a_offset.1);
+        let b = is_occupied(self, b_offset.0, b_offset.1);
+        let c = is_occupied(self, c_offset.0, c_offset.1);
+        let d = is_occupied(self, d_offset.0, d_offset.1);
+
+        if a && b && (c || d) {
+            return TSpinInternal::Regular;
+        }
+        if c && d && (a || b) {
+            return TSpinInternal::Mini;
+        }
+
+        TSpinInternal::None
     }
 
     /* * * * * * * * * *

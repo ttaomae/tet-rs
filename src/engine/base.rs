@@ -478,6 +478,15 @@ impl BaseEngine {
                     return false;
                 }
             },
+            (State::Falling(n), Gravity::RowsPerTick(rpt)) => {
+                let n_rows = self.drop(*rpt);
+                if n_rows > 1 {
+                    if soft_drop {
+                        self.notify_observers(|obs| obs.on_soft_drop(n_rows));
+                    }
+                    return true;
+                }
+            },
             _ => unimplemented!(),
         };
 
@@ -486,7 +495,6 @@ impl BaseEngine {
 
     fn apply_lock(&mut self) {
         self.lock();
-        let t_spin = TSpin::from(&self.current_t_spin);
         self.notify_observers(|obs| obs.on_lock(TSpin::from(&self.current_t_spin)));
         self.current_t_spin = TSpinInternal::None;
         if self.contains_full_rows() {
@@ -654,7 +662,7 @@ impl BaseEngine {
                 return col as u8;
             }
         }
-        col_offset as u8
+        col_offset.abs() as u8
     }
 
     /// Rotates the current piece clockwise.

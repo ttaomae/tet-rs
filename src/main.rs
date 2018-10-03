@@ -16,7 +16,7 @@ use piston_window::PistonWindow;
 
 use self::engine::{
     core::{Playfield, Space},
-    base::{BaseEngine, State},
+    base::{BaseEngine, Engine, State},
 };
 
 const SPACE_SIZE: u32 = 20;
@@ -82,7 +82,7 @@ const DEFAULT_DRAW_STATE: DrawState = DrawState {
 };
 const IDENTITY_TRANSFORMATION_MATRIX: [[f64; 3]; 2] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 
-fn render<G: Graphics>(engine: &BaseEngine, graphics: &mut G) {
+fn render<G: Graphics>(engine: &impl Engine, graphics: &mut G) {
     fn convert_coordinates(x: u32, y: u32, w: u32, h: u32) -> [f64; 4] {
         let width_scale = 2.0 / WIDTH as f64;
         let height_scale = 2.0 / HEIGHT as f64;
@@ -162,7 +162,7 @@ fn update_held_keys(held_keys: &mut HashSet<Key>, button_args: ButtonArgs) {
         };
     }
 }
-fn handle_input(engine: &mut BaseEngine, held_keys: &HashSet<Key>) {
+fn handle_input(engine: &mut impl Engine, held_keys: &HashSet<Key>) {
     for key in held_keys.iter() {
         match key {
             Key::Left => engine.input_move_left(),

@@ -15,6 +15,20 @@ const AUTO_REPEAT_RATE: u32 = 7;
 const LOCK_DELAY: u32 = 30;
 const LINE_CLEAR_DELAY: u32 = 30;
 
+pub trait Engine {
+    fn tick(&mut self) -> State;
+    fn get_playfield(&self) -> Playfield;
+    fn get_current_piece(&self) -> CurrentPiece;
+
+    fn input_move_left(&self);
+    fn input_move_right(&self);
+    fn input_rotate_cw(&self);
+    fn input_rotate_ccw(&self);
+    fn input_soft_drop(&self);
+    fn input_hard_drop(&self);
+    fn input_hold(&self);
+}
+
 /// The main game engine.
 pub struct BaseEngine {
     playfield: Playfield,
@@ -139,6 +153,59 @@ pub trait BaseEngineObserver {
     fn on_line_clear(&self, n_rows: u8) {}
 }
 
+impl Engine for BaseEngine {
+
+    fn tick(&mut self) -> State {
+        // Always process input so that hold durations are accurate.
+        let actions = self.process_input();
+
+        match self.state {
+            State::Spawn => self.tick_spawn(),
+            State::Falling(_) => self.tick_falling(&actions),
+            State::Lock(_) => self.tick_lock(&actions),
+            State::LineClear(_) => self.tick_line_clear(),
+            State::TopOut => (),
+        }
+
+        self.state.clone()
+    }
+
+    fn get_playfield(&self) -> Playfield {
+        self.playfield
+    }
+
+    fn get_current_piece(&self) -> CurrentPiece {
+        self.current_piece
+    }
+
+    fn input_move_left(&self) {
+        self.input_action(Action::MoveLeft);
+    }
+
+    fn input_move_right(&self) {
+        self.input_action(Action::MoveRight);
+    }
+
+    fn input_rotate_cw(&self) {
+        self.input_action(Action::RotateClockwise);
+    }
+
+    fn input_rotate_ccw(&self) {
+        self.input_action(Action::RotateCounterClockwise);
+    }
+
+    fn input_soft_drop(&self) {
+        self.input_action(Action::SoftDrop);
+    }
+
+    fn input_hard_drop(&self) {
+        self.input_action(Action::HardDrop);
+    }
+
+    fn input_hold(&self) {
+        self.input_action(Action::Hold);
+    }
+}
 impl BaseEngine {
     /// Creates a new engine with the specified tetromino generator.
     fn with_tetromino_generator(tetromino_generator: Box<dyn TetrominoGenerator>) -> BaseEngine {
@@ -173,14 +240,6 @@ impl BaseEngine {
         BaseEngine::with_tetromino_generator(Box::new(BagGenerator::new()))
     }
 
-    pub fn get_playfield(&self) -> Playfield {
-        self.playfield
-    }
-
-    pub fn get_current_piece(&self) -> CurrentPiece {
-        self.current_piece
-    }
-
     pub fn add_observer(&mut self, observer: Rc<dyn BaseEngineObserver>) {
         self.observers.push(observer);
     }
@@ -195,21 +254,6 @@ impl BaseEngine {
      * Engine actions. *
      * * * * * * * * * */
     // Actions performed by the engine.
-
-    pub fn tick(&mut self) -> State {
-        // Always process input so that hold durations are accurate.
-        let actions = self.process_input();
-
-        match self.state {
-            State::Spawn => self.tick_spawn(),
-            State::Falling(_) => self.tick_falling(&actions),
-            State::Lock(_) => self.tick_lock(&actions),
-            State::LineClear(_) => self.tick_line_clear(),
-            State::TopOut => (),
-        }
-
-        self.state.clone()
-    }
 
     /// Processes input and returns a list of actions to perform on this tick.
     fn process_input(&mut self) -> HashSet<Action> {
@@ -825,34 +869,6 @@ impl BaseEngine {
 
     fn input_action(&self, action: Action) {
         self.current_tick_inputs.borrow_mut().insert(action);
-    }
-
-    pub fn input_move_left(&self) {
-        self.input_action(Action::MoveLeft);
-    }
-
-    pub fn input_move_right(&self) {
-        self.input_action(Action::MoveRight);
-    }
-
-    pub fn input_rotate_cw(&self) {
-        self.input_action(Action::RotateClockwise);
-    }
-
-    pub fn input_rotate_ccw(&self) {
-        self.input_action(Action::RotateCounterClockwise);
-    }
-
-    pub fn input_soft_drop(&self) {
-        self.input_action(Action::SoftDrop);
-    }
-
-    pub fn input_hard_drop(&self) {
-        self.input_action(Action::HardDrop);
-    }
-
-    pub fn input_hold(&self) {
-        self.input_action(Action::Hold);
     }
 }
 

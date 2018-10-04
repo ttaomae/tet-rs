@@ -17,6 +17,7 @@ use piston_window::PistonWindow;
 use self::engine::{
     core::{Playfield, Space},
     base::{BaseEngine, Engine, State},
+    single::SinglePlayerEngine
 };
 
 const SPACE_SIZE: u32 = 20;
@@ -32,7 +33,7 @@ fn main() {
     window.set_max_fps(60);
     window.set_ups(60);
 
-    let mut engine = BaseEngine::new();
+    let mut engine = SinglePlayerEngine::new();
     let mut pressed_keys = HashSet::new();
 
     while let Some(event) = window.next() {

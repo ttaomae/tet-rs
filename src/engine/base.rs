@@ -284,6 +284,10 @@ impl BaseEngine {
         }
     }
 
+    pub fn set_gravity(&mut self, gravity: Gravity) {
+        self.gravity = gravity;
+    }
+
     /* * * * * * * * * *
      * Engine actions. *
      * * * * * * * * * */

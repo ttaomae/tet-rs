@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt;
+use std::ops::Mul;
 use std::rc::Rc;
 
 use rand::distributions::{Distribution, Standard};
@@ -39,7 +40,6 @@ pub struct BaseEngine {
     current_tick_inputs: RefCell<HashSet<Action>>,
     current_inputs: HashMap<Action, u32>,
     gravity: Gravity,
-    soft_drop_gravity: Gravity,
     next_pieces: VecDeque<Tetromino>,
     state: State,
     current_t_spin: TSpinInternal,
@@ -55,9 +55,45 @@ pub enum State {
     TopOut,
 }
 
-enum Gravity {
+#[derive(Clone, Copy)]
+pub enum Gravity {
     TicksPerRow(u8),
     RowsPerTick(u8),
+}
+
+impl Mul<f64> for Gravity {
+    type Output = Gravity;
+
+    // Increase gravity by a factor equal to the right-hand side.
+    fn mul(self, rhs: f64) -> Gravity {
+        match self {
+            Gravity::TicksPerRow(tpr) => {
+                let ticks_per_row = tpr as f64;
+                if ticks_per_row > rhs {
+                    Gravity::TicksPerRow((ticks_per_row / rhs).round() as u8)
+                }
+                else {
+                    let rows_per_tick = rhs / ticks_per_row;
+                    // Max gravity is entire playfield height per tick.
+                    if rows_per_tick > Playfield::VISIBLE_HEIGHT as f64 {
+                        Gravity::RowsPerTick(Playfield::VISIBLE_HEIGHT)
+                    }
+                    else {
+                        Gravity::RowsPerTick(rows_per_tick as u8)
+                    }
+                }
+            },
+            Gravity::RowsPerTick(rpt) => {
+                let new_rows_per_tick = (rpt as f64) * rhs;
+                if new_rows_per_tick > Playfield::VISIBLE_HEIGHT as f64 {
+                    Gravity::RowsPerTick(Playfield::VISIBLE_HEIGHT)
+                }
+                else {
+                    Gravity::RowsPerTick(new_rows_per_tick as u8)
+                }
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
@@ -154,7 +190,6 @@ pub trait BaseEngineObserver {
 }
 
 impl Engine for BaseEngine {
-
     fn tick(&mut self) -> State {
         // Always process input so that hold durations are accurate.
         let actions = self.process_input();
@@ -226,8 +261,7 @@ impl BaseEngine {
             is_hold_available: true,
             current_tick_inputs: RefCell::new(HashSet::new()),
             current_inputs,
-            gravity: Gravity::TicksPerRow(40),
-            soft_drop_gravity: Gravity::TicksPerRow(2),
+            gravity: Gravity::TicksPerRow(30),
             next_pieces,
             state: State::Falling(0),
             current_t_spin: TSpinInternal::None,
@@ -504,15 +538,15 @@ impl BaseEngine {
     fn apply_gravity(&mut self, actions: &HashSet<Action>) -> bool {
         let soft_drop = actions.contains(&Action::SoftDrop);
         let gravity = if soft_drop {
-            &self.soft_drop_gravity
+            self.gravity * 20.
         } else {
-            &self.gravity
+            self.gravity
         };
 
         // Handle normal gravity.
         match (&self.state, gravity) {
             (State::Falling(n), Gravity::TicksPerRow(tpr)) => {
-                if *n >= *tpr as u32 {
+                if *n >= tpr as u32 {
                     if self.drop_one() == 1 {
                         if soft_drop {
                             self.notify_observers(|obs| obs.on_soft_drop(1));
@@ -523,7 +557,7 @@ impl BaseEngine {
                 }
             },
             (State::Falling(n), Gravity::RowsPerTick(rpt)) => {
-                let n_rows = self.drop(*rpt);
+                let n_rows = self.drop(rpt);
                 if n_rows > 1 {
                     if soft_drop {
                         self.notify_observers(|obs| obs.on_soft_drop(n_rows));

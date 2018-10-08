@@ -1,9 +1,9 @@
+use super::base::{BaseEngine, BaseEngineObserver, CurrentPiece, Engine, Gravity, State, TSpin};
 use super::core::{Playfield, Tetromino};
-use super::base::{BaseEngine, Engine, Gravity, BaseEngineObserver, State, CurrentPiece, TSpin};
 use std::cell::*;
 use std::rc::Rc;
 
-const GRAVITY: [Gravity;15] = [
+const GRAVITY: [Gravity; 15] = [
     Gravity::TicksPerRow(60),
     Gravity::TicksPerRow(48),
     Gravity::TicksPerRow(37),
@@ -31,7 +31,8 @@ impl Engine for SinglePlayerEngine {
         let state = self.base_engine.tick();
 
         if let State::Spawn = state {
-            self.base_engine.set_gravity(GRAVITY[self.stat_tracker.get_level() as usize - 1]);
+            self.base_engine
+                .set_gravity(GRAVITY[self.stat_tracker.get_level() as usize - 1]);
         }
 
         state
@@ -90,18 +91,15 @@ impl SinglePlayerEngine {
 
         base_engine.add_observer(stat_tracker.clone());
 
-        let engine = SinglePlayerEngine {
+        SinglePlayerEngine {
             base_engine,
             stat_tracker,
-        };
-
-        engine
+        }
     }
 
     fn get_score(&self) -> u32 {
         self.stat_tracker.score.get()
     }
-
 }
 
 struct StatTracker {
@@ -150,7 +148,7 @@ impl BaseEngineObserver for StatTracker {
             _ => {
                 self.current_combo.set(0);
                 ComboStatus::Inactive
-            },
+            }
         };
         self.combo_status.set(combo_status);
 
@@ -158,11 +156,11 @@ impl BaseEngineObserver for StatTracker {
     }
 
     fn on_soft_drop(&self, n_rows: u8) {
-        self.score.set(self.score.get() + n_rows as u32);
+        self.score.set(self.score.get() + u32::from(n_rows));
     }
 
     fn on_hard_drop(&self, n_rows: u8) {
-        self.score.set(self.score.get() + 2 * n_rows as u32);
+        self.score.set(self.score.get() + 2 * u32::from(n_rows));
     }
 
     fn on_line_clear(&self, n_rows: u8) {
@@ -193,12 +191,12 @@ impl BaseEngineObserver for StatTracker {
         self.back_to_back.set(back_to_back);
 
         // 50 points per combo. 1-combo == 2-in-a-row.
-        points += 50 * (self.current_combo.get() - 1) as u32;
+        points += 50 * u32::from(self.current_combo.get() - 1);
 
-        self.score.set(self.score.get() + points * self.get_level() as u32);
+        self.score.set(self.score.get() + points * u32::from(self.get_level()));
 
         // Do not update lines cleared until after final score is computed so that level is based on
         // lines cleared before this current action.
-        self.lines_cleared.set(self.lines_cleared.get() + n_rows as u32);
+        self.lines_cleared.set(self.lines_cleared.get() + u32::from(n_rows));
     }
 }

@@ -3,9 +3,8 @@ mod render;
 
 use std::collections::HashSet;
 
-use piston::{
-    input::{Button, ButtonArgs, ButtonState, Event, Input, Key, Loop},
-};
+use piston::input::{Button, ButtonArgs, ButtonState, Event, Input, Key, Loop};
+
 use self::engine::{
     base::{Engine, State},
     single::SinglePlayerEngine,
@@ -25,8 +24,7 @@ fn main() {
                         engine.render(graphics);
                     });
                 }
-                Loop::Update(_) =>
-                {
+                Loop::Update(_) => {
                     handle_input(&mut engine, &pressed_keys);
                     if let State::TopOut = engine.tick() {
                         break;

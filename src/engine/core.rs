@@ -49,7 +49,7 @@ impl Playfield {
             panic!("row must be be between 1 and 40.");
         }
         if col < 1 || col > Playfield::WIDTH {
-            panic!("col mus tbe between 1 and 10.");
+            panic!("col must be between 1 and 10.");
         }
     }
 }

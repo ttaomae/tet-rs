@@ -70,24 +70,24 @@ impl Mul<f64> for Gravity {
     fn mul(self, rhs: f64) -> Gravity {
         match self {
             Gravity::TicksPerRow(tpr) => {
-                let ticks_per_row = tpr as f64;
+                let ticks_per_row = f64::from(tpr);
                 if ticks_per_row > rhs {
                     Gravity::TicksPerRow((ticks_per_row / rhs).round() as u8)
                 }
                 else {
                     let rows_per_tick = rhs / ticks_per_row;
                     // Max gravity is entire playfield height per tick.
-                    if rows_per_tick > Playfield::VISIBLE_HEIGHT as f64 {
+                    if rows_per_tick > f64::from(Playfield::VISIBLE_HEIGHT) {
                         Gravity::RowsPerTick(Playfield::VISIBLE_HEIGHT)
                     }
                     else {
                         Gravity::RowsPerTick(rows_per_tick as u8)
                     }
                 }
-            },
+            }
             Gravity::RowsPerTick(rpt) => {
-                let new_rows_per_tick = (rpt as f64) * rhs;
-                if new_rows_per_tick > Playfield::VISIBLE_HEIGHT as f64 {
+                let new_rows_per_tick = f64::from(rpt) * rhs;
+                if new_rows_per_tick > f64::from(Playfield::VISIBLE_HEIGHT) {
                     Gravity::RowsPerTick(Playfield::VISIBLE_HEIGHT)
                 }
                 else {
@@ -146,15 +146,15 @@ impl CurrentPiece {
         self.piece.rotate_ccw();
     }
 
-    pub fn get_bounding_box(&self) -> [[Space; 4]; 4] {
+    pub fn get_bounding_box(self) -> [[Space; 4]; 4] {
         self.piece.get_bounding_box()
     }
 
-    pub fn get_row(&self) -> i8 {
+    pub fn get_row(self) -> i8 {
         self.row
     }
 
-    pub fn get_col(&self) -> i8 {
+    pub fn get_col(self) -> i8 {
         self.col
     }
 }
@@ -204,7 +204,7 @@ impl Engine for BaseEngine {
             State::TopOut => (),
         }
 
-        self.state.clone()
+        self.state
     }
 
     fn get_playfield(&self) -> Playfield {
@@ -288,7 +288,10 @@ impl BaseEngine {
         self.observers.push(observer);
     }
 
-    fn notify_observers<F>(&self, notify: F) where F: Fn(&Rc<dyn BaseEngineObserver>){
+    fn notify_observers<F>(&self, notify: F)
+    where
+        F: Fn(&Rc<dyn BaseEngineObserver>),
+    {
         for observer in self.observers.iter() {
             notify(observer);
         }
@@ -311,7 +314,7 @@ impl BaseEngine {
                 match self.current_inputs.get_mut(&action) {
                     Option::Some(duration) => {
                         *duration += 1;
-                    },
+                    }
                     Option::None => panic!(),
                 }
             }
@@ -343,22 +346,24 @@ impl BaseEngine {
                     if *duration == 1 {
                         current_turn_actions.insert(*action);
                     }
-                },
+                }
                 // This is always valid if pressed.
                 SoftDrop => {
                     if *duration >= 1 {
                         current_turn_actions.insert(*action);
                     }
-                },
+                }
                 // This is valid on first press, when reaching auto-repeat delay,
                 // or on intervals based on the auto-repeat rate.
                 MoveLeft | MoveRight => {
-                    if *duration == 1 || *duration == AUTO_REPEAT_DELAY
-                        || *duration > AUTO_REPEAT_DELAY && (*duration - AUTO_REPEAT_DELAY) % AUTO_REPEAT_RATE == 0
+                    if *duration == 1
+                        || *duration == AUTO_REPEAT_DELAY
+                        || *duration > AUTO_REPEAT_DELAY
+                            && (*duration - AUTO_REPEAT_DELAY) % AUTO_REPEAT_RATE == 0
                     {
                         current_turn_actions.insert(*action);
                     }
-                },
+                }
             }
         }
 
@@ -433,7 +438,7 @@ impl BaseEngine {
                 else {
                     self.state = State::Lock(n + 1);
                 }
-            },
+            }
             _ => panic!("This method should only be called while state is State::Lock."),
         }
     }
@@ -445,10 +450,10 @@ impl BaseEngine {
                 self.notify_observers(|obs| obs.on_line_clear(n_rows));
                 self.next_piece();
                 self.state = State::Spawn;
-            },
+            }
             State::LineClear(n) => {
                 self.state = State::LineClear(n + 1);
-            },
+            }
             _ => panic!("This method should only be called while state is State::LineClear."),
         }
     }
@@ -477,12 +482,10 @@ impl BaseEngine {
     /// Attempts to hold the current piece if it is one of the specified actions.
     /// Returns whether or not the the hold was successful.
     fn apply_hold(&mut self, actions: &HashSet<Action>) -> bool {
-        if actions.contains(&Action::Hold) {
-            if self.is_hold_available {
-                self.hold_piece();
-                self.is_hold_available = false;
-                return true;
-            }
+        if actions.contains(&Action::Hold) && self.is_hold_available {
+            self.hold_piece();
+            self.is_hold_available = false;
+            return true;
         }
 
         false
@@ -506,13 +509,12 @@ impl BaseEngine {
         if actions.contains(&Action::MoveLeft) {
             if self.move_piece(-1) == 1 {
                 self.current_t_spin = TSpinInternal::None;
-                return Option::Some(Action::MoveLeft)
+                return Option::Some(Action::MoveLeft);
             }
-        } else if actions.contains(&Action::MoveRight) {
-            if self.move_piece(1) == 1 {
-                self.current_t_spin = TSpinInternal::None;
-                return Option::Some(Action::MoveRight);
-            }
+        }
+        else if actions.contains(&Action::MoveRight) && self.move_piece(1) == 1 {
+            self.current_t_spin = TSpinInternal::None;
+            return Option::Some(Action::MoveRight);
         }
 
         Option::None
@@ -525,13 +527,12 @@ impl BaseEngine {
             if self.rotate_piece_cw() {
                 return Option::Some(Action::RotateClockwise);
             }
-        } else if actions.contains(&Action::RotateCounterClockwise) {
-            if self.rotate_piece_ccw() {
-                return Option::Some(Action::RotateCounterClockwise);
-            }
+        }
+        else if actions.contains(&Action::RotateCounterClockwise) && self.rotate_piece_ccw() {
+            return Option::Some(Action::RotateCounterClockwise);
         }
 
-        return Option::None
+        Option::None
     }
 
     fn apply_hard_drop(&mut self, actions: &HashSet<Action>) -> Option<Action> {
@@ -553,14 +554,15 @@ impl BaseEngine {
         let soft_drop = actions.contains(&Action::SoftDrop);
         let gravity = if soft_drop {
             self.gravity * 20.
-        } else {
+        }
+        else {
             self.gravity
         };
 
         // Handle normal gravity.
         match (&self.state, gravity) {
             (State::Falling(n), Gravity::TicksPerRow(tpr)) => {
-                if *n >= tpr as u32 {
+                if *n >= u32::from(tpr) {
                     if self.drop_one() == 1 {
                         if soft_drop {
                             self.notify_observers(|obs| obs.on_soft_drop(1));
@@ -569,8 +571,8 @@ impl BaseEngine {
                     }
                     return false;
                 }
-            },
-            (State::Falling(n), Gravity::RowsPerTick(rpt)) => {
+            }
+            (State::Falling(_), Gravity::RowsPerTick(rpt)) => {
                 let n_rows = self.drop(rpt);
                 if n_rows > 1 {
                     if soft_drop {
@@ -578,7 +580,7 @@ impl BaseEngine {
                     }
                     return true;
                 }
-            },
+            }
             _ => unimplemented!(),
         };
 
@@ -662,7 +664,7 @@ impl BaseEngine {
 
     /// Returns whether or not the current piece is in a position where it can be locked into place.
     fn is_in_lock_position(&self) -> bool {
-        let mut piece = self.current_piece.clone();
+        let mut piece = self.current_piece;
         piece.row -= 1;
 
         self.has_collision_with_piece(piece)
@@ -769,12 +771,13 @@ impl BaseEngine {
 
     /// Rotates the current piece and applies wall kick, if possible. Otherwise, does nothing.
     fn rotate_piece<F>(&mut self, mut rotate: F) -> bool
-        where F: FnMut(&mut CurrentPiece)
+    where
+        F: FnMut(&mut CurrentPiece),
     {
-        let initial = self.current_piece.piece.get_rotation().clone();
-        let mut updated_piece = self.current_piece.clone();
+        let initial = *self.current_piece.piece.get_rotation();
+        let mut updated_piece = self.current_piece;
         rotate(&mut updated_piece);
-        let rotated = updated_piece.piece.get_rotation().clone();
+        let rotated = *updated_piece.piece.get_rotation();
 
         if let Option::Some((col_offset, row_offset)) =
             self.check_rotation(&mut updated_piece, initial, rotated)
@@ -844,7 +847,7 @@ impl BaseEngine {
             // Return if there was no collision.
             if !self.has_collision_with_piece(*piece) {
                 // enumerate() uses zero based index. Rotation point use one-based index.
-                if self.current_piece.piece.get_shape() == &Tetromino::T &&  rotation_point == 4 {
+                if self.current_piece.piece.get_shape() == &Tetromino::T && rotation_point == 4 {
                     self.current_t_spin = TSpinInternal::PointFive;
                 }
                 return Option::Some(*offset);
@@ -879,7 +882,8 @@ impl BaseEngine {
         //     0 1 2 3   0 1 2 3   0 1 2 3   0 1 2 3
 
         // Row/Column offsets for each corner.
-        let (a_offset, b_offset, c_offset, d_offset) = match self.current_piece.piece.get_rotation() {
+        let (a_offset, b_offset, c_offset, d_offset) = match self.current_piece.piece.get_rotation()
+        {
             Rotation::Spawn => ((3, 0), (3, 2), (1, 0), (1, 2)),
             Rotation::Clockwise => ((3, 2), (1, 2), (3, 0), (1, 0)),
             Rotation::OneEighty => ((1, 2), (1, 0), (3, 2), (3, 0)),
@@ -891,7 +895,8 @@ impl BaseEngine {
             let current_col = engine.current_piece.col;
             let row = current_row + row_offset;
             let col = current_col + col_offset;
-            row < 1 || row > Playfield::TOTAL_HEIGHT as i8 || col < 1 || col > Playfield::WIDTH as i8
+            row < 1 || row > Playfield::TOTAL_HEIGHT as i8
+                || col < 1 || col > Playfield::WIDTH as i8
                 || engine.playfield.get(row as u8, col as u8) == Space::Block
         }
 
@@ -1123,15 +1128,23 @@ mod tests {
         // The tetromino should be at the bottom of the playfield
         // so dropping again should have no effect.
         engine.drop_one();
-        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
+        assert_eq!(
+            engine.current_piece.row,
+            start_row - Playfield::VISIBLE_HEIGHT as i8
+        );
         engine.drop_one();
-        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
+        assert_eq!(
+            engine.current_piece.row,
+            start_row - Playfield::VISIBLE_HEIGHT as i8
+        );
 
         // Perform same test with drop().
         engine.next_piece();
         engine.drop(25);
-        assert_eq!(engine.current_piece.row, start_row - Playfield::VISIBLE_HEIGHT as i8);
-
+        assert_eq!(
+            engine.current_piece.row,
+            start_row - Playfield::VISIBLE_HEIGHT as i8
+        );
 
         // Add an obstacle, then test that piece cannot drop past it.
         engine.next_piece();
@@ -1156,7 +1169,8 @@ mod tests {
 
     #[test]
     fn test_engine_lock() {
-        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::S));
+        let mut engine =
+            BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::S));
 
         // Drop and lock three S tetrominos in spawn position, far left, and far right.
         // Check before and after locking that expected pieces are empty/occupied.
@@ -1299,7 +1313,8 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_collision() {
-        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::I));
+        let mut engine =
+            BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::I));
         engine.next_piece();
 
         // Surround above and below to prevent rotation.
@@ -1318,7 +1333,8 @@ mod tests {
 
     #[test]
     fn test_engine_rotate_piece_wall_kick() {
-        let mut engine = BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::T));
+        let mut engine =
+            BaseEngine::with_tetromino_generator(Box::new(SingleTetrominoGenerator::T));
         engine.next_piece();
 
         // Setup wall kick

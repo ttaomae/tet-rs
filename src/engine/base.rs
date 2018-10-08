@@ -20,6 +20,8 @@ pub trait Engine {
     fn tick(&mut self) -> State;
     fn get_playfield(&self) -> Playfield;
     fn get_current_piece(&self) -> CurrentPiece;
+    fn get_hold_piece(&self) -> Option<Tetromino>;
+    fn get_next_pieces(&self) -> Vec<Tetromino>;
 
     fn input_move_left(&self);
     fn input_move_right(&self);
@@ -211,6 +213,14 @@ impl Engine for BaseEngine {
 
     fn get_current_piece(&self) -> CurrentPiece {
         self.current_piece
+    }
+
+    fn get_hold_piece(&self) -> Option<Tetromino> {
+        self.hold_piece
+    }
+
+    fn get_next_pieces(&self) -> Vec<Tetromino> {
+        Vec::from(self.next_pieces.clone())
     }
 
     fn input_move_left(&self) {

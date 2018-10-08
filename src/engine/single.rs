@@ -1,4 +1,4 @@
-use super::core::Playfield;
+use super::core::{Playfield, Tetromino};
 use super::base::{BaseEngine, Engine, Gravity, BaseEngineObserver, State, CurrentPiece, TSpin};
 use std::cell::*;
 use std::rc::Rc;
@@ -43,6 +43,14 @@ impl Engine for SinglePlayerEngine {
 
     fn get_current_piece(&self) -> CurrentPiece {
         self.base_engine.get_current_piece()
+    }
+
+    fn get_hold_piece(&self) -> Option<Tetromino> {
+        self.base_engine.get_hold_piece()
+    }
+
+    fn get_next_pieces(&self) -> Vec<Tetromino> {
+        self.base_engine.get_next_pieces()
     }
 
     fn input_move_left(&self) {
